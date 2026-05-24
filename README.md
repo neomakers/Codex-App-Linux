@@ -93,9 +93,11 @@ Installer version: `2026.05.16-mobile-pairing`
 3. Builds Linux runtime metadata from extracted app version/dependencies.
 4. Installs Electron + dependencies and rebuilds native modules for Linux.
 5. Stubs macOS-only modules (`sparkle`, `electron-liquid-glass`).
-6. Patches Linux-specific Codex Mobile pairing feature gates.
+6. Runs `tools/patch-codex-linux.mjs` to patch Linux-specific Codex Mobile pairing feature gates.
 7. Generates launcher script and desktop entry.
 8. Registers `codex://` as a Linux URL handler for desktop auth callbacks.
+
+The patch engine writes `codex-linux/codex-linux-feature-manifest.json` so each install records which Linux compatibility patches were applied or skipped.
 
 ## Codex Mobile pairing
 

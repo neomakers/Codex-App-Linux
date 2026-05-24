@@ -25,6 +25,7 @@ fi
 cd "$SCRIPT_DIR"
 
 DEFAULT_DMG_URL="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
+DEFAULT_PATCH_ENGINE_URL="https://raw.githubusercontent.com/areu01or00/Codex-App-Linux/main/tools/patch-codex-linux.mjs"
 DEFAULT_OUTPUT_DIR="$SCRIPT_DIR/codex-linux"
 INSTALLER_VERSION="2026.05.16-mobile-pairing"
 WORK_DIR="$(mktemp -d /tmp/codex-linux-install-XXXXXX)"
@@ -338,67 +339,26 @@ APP_MAIN_ENTRY="$(node -e "const p=require('$OUTPUT_DIR/package.json'); console.
 ELECTRON_RUNTIME_VERSION="$(node -e "const p=require('$OUTPUT_DIR/package.json'); console.log((p.devDependencies&&p.devDependencies.electron)||'unknown')")"
 
 # -----------------------------------------------------------------------------
-# Web UI feature gates
+# Linux patch engine
 # -----------------------------------------------------------------------------
-log "Patching Codex Mobile pairing gates for Linux..."
+resolve_patch_engine() {
+  local local_engine="$SCRIPT_DIR/tools/patch-codex-linux.mjs"
+  if [ -f "$local_engine" ]; then
+    echo "$local_engine"
+    return
+  fi
 
-node - "$OUTPUT_DIR" <<'NODE'
-const fs = require("fs");
-const path = require("path");
-
-const root = process.argv[2];
-const assetsDir = path.join(root, "webview", "assets");
-
-function findAsset(pattern) {
-  const matches = fs.readdirSync(assetsDir).filter((name) => pattern.test(name));
-  if (matches.length === 0) {
-    throw new Error(`Could not find asset matching ${pattern}`);
-  }
-  return path.join(assetsDir, matches[0]);
+  local downloaded="$WORK_DIR/patch-codex-linux.mjs"
+  log "No local patch engine found. Downloading Linux patch engine..."
+  curl -fsSL --retry 3 --connect-timeout 20 -o "$downloaded" "$DEFAULT_PATCH_ENGINE_URL" || \
+    error "Failed to download patch engine from $DEFAULT_PATCH_ENGINE_URL"
+  echo "$downloaded"
 }
 
-function replaceOptional(file, from, to, label) {
-  const input = fs.readFileSync(file, "utf8");
-  if (input.includes(to)) {
-    console.log(`Already patched ${label} in ${path.basename(file)}`);
-    return;
-  }
-  if (!input.includes(from)) {
-    console.warn(`Skipping ${label}; expected snippet not found in ${path.basename(file)}`);
-    return;
-  }
-  fs.writeFileSync(file, input.replace(from, to));
-  console.log(`Patched ${label} in ${path.basename(file)}`);
-}
-
-const appMain = findAsset(/^app-main-.*\.js$/);
-const remoteConnections = findAsset(/^remote-connections-settings-.*\.js$/);
-
-replaceOptional(
-  appMain,
-  "i=Pl(),a=Is(`2798711298`)",
-  "i=!0,a=!0",
-  "Codex Mobile announcement feature gate"
-);
-
-replaceOptional(
-  appMain,
-  "remoteControlFeaturesVisible:Pl(),remoteControlOnboardingEnabled:Is(`2798711298`)",
-  "remoteControlFeaturesVisible:!0,remoteControlOnboardingEnabled:!0",
-  "Codex Mobile sidebar feature gate"
-);
-
-replaceOptional(
-  remoteConnections,
-  "if(r)return null;if(!n){let t;",
-  "if(r)return null;{let t;",
-  "Connections tab mobile setup visibility"
-);
-
-console.log(`Patched ${path.basename(appMain)} and ${path.basename(remoteConnections)}`);
-NODE
-
-success "Codex Mobile pairing UI enabled"
+PATCH_ENGINE="$(resolve_patch_engine)"
+log "Running Linux patch engine: $PATCH_ENGINE"
+node "$PATCH_ENGINE" "$OUTPUT_DIR"
+success "Linux patch engine complete"
 
 # -----------------------------------------------------------------------------
 # npm install + rebuild
