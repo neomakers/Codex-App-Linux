@@ -4,9 +4,12 @@
   <img src="https://img.shields.io/badge/platform-linux-2ea44f" alt="Linux" />
   <img src="https://img.shields.io/badge/status-active-1f6feb" alt="Status" />
   <img src="https://img.shields.io/badge/installer-one--script-orange" alt="One script installer" />
-  <img src="https://img.shields.io/badge/Codex%20Mobile-pairing%20enabled-7c3aed" alt="Codex Mobile pairing enabled" />
+  <img src="https://img.shields.io/badge/Codex%20Mobile-ported-2ea44f" alt="Codex Mobile pairing ported" />
+  <img src="https://img.shields.io/badge/In--app%20Browser-working-0969da" alt="In-app Browser Use working" />
+  <img src="https://img.shields.io/badge/App%20Snapshots-WIP-7c3aed" alt="App Snapshots work in progress" />
+  <img src="https://img.shields.io/badge/Chrome%20Control-in%20progress-fbbc04" alt="Chrome Control in progress" />
   <img src="https://img.shields.io/badge/runtime-electron-black" alt="Electron" />
-  <img src="https://img.shields.io/badge/version-2026.05.16--mobile--pairing-blue" alt="Installer version 2026.05.16-mobile-pairing" />
+  <img src="https://img.shields.io/badge/version-2026.05.25--chrome--host-blue" alt="Installer version 2026.05.25-chrome-host" />
   <img src="https://img.shields.io/badge/project-unofficial-red" alt="Unofficial" />
 </p>
 
@@ -14,7 +17,7 @@
   <img src="demo/codex-mobile-pairing.png" alt="Codex Mobile pairing screen running in the Linux port with the QR code scrambled for safety" width="820" />
 </p>
 
-OpenAI does not currently ship a native Codex desktop app for Linux. That matters more now because Codex Mobile expects a desktop Codex app to approve phone pairing. This project fills that gap by converting the official macOS Codex `.dmg` into a Linux-compatible Electron bundle and patching the Linux build so Codex Mobile pairing is available.
+OpenAI does not currently ship a native Codex desktop app for Linux. That matters more now because newer Codex workflows expect a desktop Codex app for phone pairing, in-app Browser Use, Chrome control, and app context capture. This project fills that gap by converting the official macOS Codex `.dmg` into a Linux-compatible Electron bundle and patching selected desktop surfaces for Linux.
 
 Download the script, execute it, and it builds a runnable `codex-linux` app directory for you.
 
@@ -29,13 +32,19 @@ The latest Codex mobile workflow also depends on desktop-side authentication and
 - A runnable Codex desktop app on Linux from the official Codex DMG.
 - A one-script install flow: run `install-codex-linux.sh`, then launch `codex-linux/codex-linux.sh`.
 - Codex Mobile pairing support through the desktop **Settings → Connections → Control other devices** flow.
+- In-app Browser Use support for the Codex browser pane.
+- Work-in-progress App Snapshot screenshot attachment for Linux. This is useful visual context, not full macOS Computer Use parity.
+- Chrome Control groundwork using Google Chrome, the Codex Chrome Extension, and a generated Linux native messaging host. This is still in progress until runtime validation is complete.
 - `codex://` URL handler registration so auth callbacks can return to the desktop app.
 - Linux rebuilds/stubs for native and macOS-only Electron dependencies.
 
 ## Features
 
 - **Unofficial Linux desktop port**: converts the official Codex macOS DMG into a runnable Linux Electron app.
-- **Codex Mobile pairing**: exposes the desktop approval flow Linux users need when the phone app says **Waiting for desktop**.
+- **Codex Mobile pairing**: exposes the desktop approval flow Linux users need when the phone app says **Waiting for desktop**, and starts the remote-control bridge expected by recent Codex builds. Mobile pairing is the primary completed port surface in this release.
+- **In-app Browser Use**: enables Codex to inspect and operate the app's browser pane when the active turn has Browser Use metadata.
+- **App Snapshot screenshot context, WIP**: adds a Linux **Add app snapshot** path that captures a desktop/window screenshot into the composer. It does not yet include macOS Computer Use metadata, accessibility context, or app control.
+- **Chrome Control, in progress**: ports the upstream Chrome plugin contract for Google Chrome by installing the Codex Chrome Extension native messaging manifest and generating a Linux host bridge. Treat it as groundwork until Chrome runtime testing is complete.
 - **One-script installer**: downloads or reuses a DMG, extracts the app, installs dependencies, rebuilds native modules, and creates a launcher.
 - **Desktop integration**: adds a Linux app menu entry and registers `codex://` callback handling.
 - **Latest-DMG compatibility patches**: filters macOS/workspace-only dependencies and applies Linux-specific runtime fixes.
@@ -86,14 +95,14 @@ CODEX_LINUX_GRAPHICS_MODE=native ./codex-linux.sh
 
 ## What the installer does
 
-Installer version: `2026.05.16-mobile-pairing`
+Installer version: `2026.05.25-chrome-host`
 
 1. Uses a local DMG if available, otherwise downloads latest from OpenAI CDN.
 2. Extracts `app.asar` from the app bundle.
 3. Builds Linux runtime metadata from extracted app version/dependencies.
 4. Installs Electron + dependencies and rebuilds native modules for Linux.
 5. Stubs macOS-only modules (`sparkle`, `electron-liquid-glass`).
-6. Runs `tools/patch-codex-linux.mjs` to patch Linux-specific Codex Mobile pairing feature gates.
+6. Runs `tools/patch-codex-linux.mjs` to patch selected Linux feature surfaces: mobile pairing UI/bridge, in-app Browser Use, App Snapshot screenshot context, and Chrome Control groundwork.
 7. Generates launcher script and desktop entry.
 8. Registers `codex://` as a Linux URL handler for desktop auth callbacks.
 
@@ -101,7 +110,7 @@ The patch engine writes `codex-linux/codex-linux-feature-manifest.json` so each 
 
 ## Codex Mobile pairing
 
-This Linux port supports the newer Codex phone pairing flow used by the Codex mobile app. The official Codex desktop app is not distributed for Linux, so the mobile app can otherwise wait for a desktop approval step Linux users cannot complete. This installer patches the desktop web UI so the mobile pairing controls are visible on Linux and registers the `codex://` URL scheme used by auth callbacks.
+This Linux port supports the newer Codex phone pairing flow used by the Codex mobile app. The official Codex desktop app is not distributed for Linux, so the mobile app can otherwise wait for a desktop approval step Linux users cannot complete. This installer patches the desktop web UI so the mobile pairing controls are visible on Linux, registers the `codex://` URL scheme used by auth callbacks, enables the `remote_control` feature flag, and starts the Codex remote-control bridge from the launcher.
 
 After installing:
 
@@ -113,6 +122,67 @@ After installing:
 6. Open the Codex mobile app and tap **Connect**.
 
 If you only see fields such as **Display Name**, **Hostname**, and **SSH port**, that is the SSH remote-host setup form, not the phone pairing flow. Re-run the latest installer so the mobile pairing UI patch is applied.
+
+Mobile pairing requires the Linux desktop app process to stay running. If the mobile app stays on **Waiting for desktop**, keep the desktop app open and inspect:
+
+```bash
+tail -n 100 "${XDG_CONFIG_HOME:-$HOME/.config}/codex-linux/remote-control-daemon.log"
+tail -n 100 "${XDG_CONFIG_HOME:-$HOME/.config}/codex-linux/remote-control-start.stderr"
+```
+
+## Browser Use
+
+The installer enables the in-app Browser Use path on Linux and generates a Linux `node_repl` bridge used by Codex Browser Use turns. Expected behavior:
+
+1. Open the in-app browser panel.
+2. Navigate to a site in that panel.
+3. Ask Codex to browse or interact with the open page.
+4. Codex should use Browser Use rather than generic web search when the active turn has browser metadata.
+
+If Browser Use reports missing turn metadata or no active browser pane, restart Codex and reopen the site from the same chat thread. Do not treat web-search fallback as Browser Use success.
+
+## Chrome Control
+
+Chrome Control is in progress and intentionally matches the upstream DMG contract first:
+
+- supported browser: Google Chrome
+- required extension: Codex Chrome Extension
+- native messaging host: `com.openai.codexextension`
+- manifest path: `~/.config/google-chrome/NativeMessagingHosts/com.openai.codexextension.json`
+
+The installer copies the bundled Chrome plugin, generates a Linux native messaging host at `plugins/openai-bundled/plugins/chrome/extension-host/linux/<arch>/extension-host`, and patches the Chrome helper scripts for Linux manifest checks and Google Chrome process/launcher detection.
+
+This release includes the Linux host groundwork, but Chrome Control is not yet advertised as complete until it is tested end-to-end with regular Google Chrome and the Codex Chrome Extension. Chromium, Brave, Edge, Vivaldi, Snap/Flatpak Chrome profiles, and Chrome Beta/Dev/Canary are not first-pass targets.
+
+## App Snapshot
+
+The Linux port currently provides a work-in-progress screenshot-context version of **Add app snapshot**:
+
+1. Click `+` in the composer.
+2. Choose **Add app snapshot**.
+3. Select a screen/window if your desktop environment prompts.
+4. Confirm that a snapshot preview appears in the composer.
+
+This is intentionally not advertised as full macOS Computer Use parity. The upstream macOS feature is backed by a native Computer Use bundle with app/window metadata, permissions, accessibility context, and MCP control. The Linux port currently attaches screenshot-style visual context only. It should help Codex inspect what is visible, but it does not give Codex control over that app.
+
+## Background Presence
+
+This release does not ship reliable Linux tray/background presence. Keep the Codex desktop app process running for phone/mobile presence. If you launch with `./codex-linux.sh` from a terminal and close or quit the app, mobile will see the desktop as offline.
+
+Disable the remote-control bridge for debugging:
+
+```bash
+CODEX_LINUX_REMOTE_CONTROL=0 ./codex-linux.sh
+```
+
+## Known limitations
+
+- This is an unofficial port of a macOS app; upstream DMG changes can break patch snippets.
+- Mobile pairing requires the Linux desktop app process to keep running.
+- Browser Use depends on active in-app browser turn metadata.
+- App Snapshot is screenshot-context only, not full macOS Computer Use/Appshot parity.
+- Chrome Control is in progress and Google-Chrome-only for the first pass. It requires the Codex Chrome Extension and runtime validation on the target machine.
+- Reliable tray/background presence is not part of this release.
 
 ## Version diagnostics
 

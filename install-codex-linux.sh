@@ -27,7 +27,7 @@ cd "$SCRIPT_DIR"
 DEFAULT_DMG_URL="https://persistent.oaistatic.com/codex-app-prod/Codex.dmg"
 DEFAULT_PATCH_ENGINE_URL="https://raw.githubusercontent.com/areu01or00/Codex-App-Linux/main/tools/patch-codex-linux.mjs"
 DEFAULT_OUTPUT_DIR="$SCRIPT_DIR/codex-linux"
-INSTALLER_VERSION="2026.05.16-mobile-pairing"
+INSTALLER_VERSION="2026.05.25-chrome-host"
 WORK_DIR="$(mktemp -d /tmp/codex-linux-install-XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -181,6 +181,11 @@ log "Extracting DMG..."
 
 ASAR_PATH="$(find "$WORK_DIR/extracted" -name app.asar -type f 2>/dev/null | head -1)"
 APP_PLIST="$(find "$WORK_DIR/extracted" -path '*/Codex.app/Contents/Info.plist' -type f 2>/dev/null | head -1)"
+APP_RESOURCES_DIR="$(dirname "$ASAR_PATH")"
+CHROME_PLUGIN_SRC="$(find "$WORK_DIR/extracted" -path '*/Contents/Resources/plugins/openai-bundled/plugins/chrome/.codex-plugin/plugin.json' -type f 2>/dev/null | head -1)"
+if [ -n "$CHROME_PLUGIN_SRC" ]; then
+  CHROME_PLUGIN_SRC="$(dirname "$(dirname "$CHROME_PLUGIN_SRC")")"
+fi
 
 [ -n "$ASAR_PATH" ] || error "app.asar not found in DMG extraction"
 [ -n "$APP_PLIST" ] || error "Codex app Info.plist not found in DMG extraction"
@@ -301,6 +306,12 @@ else
 fi
 cp "$WORK_DIR/package.generated.json" "$OUTPUT_DIR/package.json"
 
+if [ -f "$APP_RESOURCES_DIR/codexTemplate.png" ]; then
+  cp "$APP_RESOURCES_DIR/codexTemplate.png" "$OUTPUT_DIR/icon.png"
+elif [ -f "$APP_RESOURCES_DIR/icon.png" ]; then
+  cp "$APP_RESOURCES_DIR/icon.png" "$OUTPUT_DIR/icon.png"
+fi
+
 # Ensure main points to an existing file for newer hashed bundles.
 node - "$OUTPUT_DIR/package.json" <<'NODE'
 const fs = require("fs");
@@ -357,6 +368,9 @@ resolve_patch_engine() {
 
 PATCH_ENGINE="$(resolve_patch_engine)"
 log "Running Linux patch engine: $PATCH_ENGINE"
+if [ -n "$CHROME_PLUGIN_SRC" ] && [ -d "$CHROME_PLUGIN_SRC" ]; then
+  export CODEX_CHROME_PLUGIN_SOURCE="$CHROME_PLUGIN_SRC"
+fi
 node "$PATCH_ENGINE" "$OUTPUT_DIR"
 success "Linux patch engine complete"
 
@@ -415,6 +429,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 export ELECTRON_RENDERER_URL="file://${SCRIPT_DIR}/webview/index.html"
+export CODEX_CHROME_PLUGIN_ROOT="${SCRIPT_DIR}/plugins/openai-bundled/plugins/chrome"
 
 if [ -z "${CODEX_CLI_PATH:-}" ]; then
   if command -v codex >/dev/null 2>&1; then
@@ -423,6 +438,124 @@ if [ -z "${CODEX_CLI_PATH:-}" ]; then
     export CODEX_CLI_PATH="${SCRIPT_DIR}/bin/codex-fallback"
   fi
 fi
+
+if [ -z "${CODEX_BROWSER_USE_NODE_PATH:-}" ] && command -v node >/dev/null 2>&1; then
+  export CODEX_BROWSER_USE_NODE_PATH="$(command -v node)"
+fi
+
+if [ -z "${NODE_REPL_NODE_PATH:-}" ] && [ -n "${CODEX_BROWSER_USE_NODE_PATH:-}" ]; then
+  export NODE_REPL_NODE_PATH="$CODEX_BROWSER_USE_NODE_PATH"
+fi
+
+if [ -z "${CODEX_NODE_REPL_PATH:-}" ]; then
+  export CODEX_NODE_REPL_PATH="${SCRIPT_DIR}/bin/node_repl-linux"
+fi
+
+enable_remote_control_config() {
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  local config_file="$codex_home/config.toml"
+
+  mkdir -p "$codex_home"
+
+  node - "$config_file" <<'NODE'
+const fs = require("fs");
+const file = process.argv[2];
+let input = "";
+try {
+  input = fs.readFileSync(file, "utf8");
+} catch {}
+
+const lines = input.split(/\r?\n/);
+const out = [];
+let inFeatures = false;
+let sawFeatures = false;
+let wroteRemoteControl = false;
+
+for (const line of lines) {
+  if (/^\s*\[.*\]\s*$/.test(line)) {
+    if (inFeatures && !wroteRemoteControl) {
+      out.push("remote_control = true");
+      wroteRemoteControl = true;
+    }
+    inFeatures = /^\s*\[features\]\s*$/.test(line);
+    sawFeatures ||= inFeatures;
+    out.push(line);
+    continue;
+  }
+
+  if (inFeatures && /^\s*remote_control\s*=/.test(line)) {
+    if (!wroteRemoteControl) {
+      out.push("remote_control = true");
+      wroteRemoteControl = true;
+    }
+    continue;
+  }
+
+  out.push(line);
+}
+
+if (inFeatures && !wroteRemoteControl) out.push("remote_control = true");
+if (!sawFeatures) out.unshift("[features]", "remote_control = true", "");
+
+fs.writeFileSync(file, out.join("\n").replace(/\n*$/, "\n"));
+NODE
+}
+
+ensure_managed_codex_shim() {
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  local managed_dir="$codex_home/packages/standalone/current"
+  local managed_codex="$managed_dir/codex"
+
+  mkdir -p "$managed_dir"
+
+  if [ -x "$managed_codex" ] && ! grep -q "Codex Linux managed-path compatibility shim" "$managed_codex" 2>/dev/null; then
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp "${managed_codex}.tmp.XXXXXX")"
+  {
+    echo '#!/bin/bash'
+    echo '# Codex Linux managed-path compatibility shim.'
+    echo 'set -euo pipefail'
+    printf 'exec %q "$@"\n' "$CODEX_CLI_PATH"
+  } > "$tmp"
+  chmod +x "$tmp"
+  mv "$tmp" "$managed_codex"
+}
+
+start_remote_control_daemon() {
+  [ "${CODEX_LINUX_REMOTE_CONTROL:-1}" = "0" ] && return 0
+  [ -x "$CODEX_CLI_PATH" ] || return 0
+
+  local log_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-linux"
+  local log_file="$log_dir/remote-control-daemon.log"
+  local start_stdout="$log_dir/remote-control-start.stdout"
+  local start_stderr="$log_dir/remote-control-start.stderr"
+  mkdir -p "$log_dir"
+
+  enable_remote_control_config >>"$log_file" 2>&1 || true
+  ensure_managed_codex_shim >>"$log_file" 2>&1 || true
+
+  {
+    echo ""
+    echo "[$(date -Is)] starting remote-control daemon via $CODEX_CLI_PATH"
+  } >>"$log_file"
+
+  "$CODEX_CLI_PATH" remote-control start --json --enable remote_control >"$start_stdout" 2>"$start_stderr" || true
+  cat "$start_stdout" >>"$log_file" 2>/dev/null || true
+  cat "$start_stderr" >>"$log_file" 2>/dev/null || true
+
+  if grep -q '"status":"connecting"' "$start_stdout" 2>/dev/null && grep -q '"timedOut":true' "$start_stdout" 2>/dev/null; then
+    echo "[$(date -Is)] remote-control daemon is stale/connecting; restarting once" >>"$log_file"
+    "$CODEX_CLI_PATH" remote-control stop --json >>"$log_file" 2>&1 || true
+    "$CODEX_CLI_PATH" remote-control start --json --enable remote_control >"$start_stdout" 2>"$start_stderr" || true
+    cat "$start_stdout" >>"$log_file" 2>/dev/null || true
+    cat "$start_stderr" >>"$log_file" 2>/dev/null || true
+  fi
+}
+
+start_remote_control_daemon
 
 linux_graphics_flags=()
 if [ "${CODEX_LINUX_GRAPHICS_MODE:-stable}" != "native" ]; then

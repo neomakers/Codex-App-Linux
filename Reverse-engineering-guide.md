@@ -2,6 +2,8 @@
 
 A technical deep-dive into extracting, analyzing, and porting the OpenAI Codex desktop application from macOS to Linux through binary analysis and runtime patching.
 
+This document is the base installer and package-conversion guide. Feature-specific ports now live in `Reverse-engineering-guide-index.md` and the linked feature contracts. Before changing code for Browser Use, Chrome Control, App Snapshot, Computer Use, or Mobile Pairing, update the relevant contract first.
+
 **Instructions for Claude**: Execute these steps to port the OpenAI Codex desktop app from macOS (.dmg) to Linux. Run all commands using Bash. The user should have the `Codex.dmg` file available.
 
 ---
