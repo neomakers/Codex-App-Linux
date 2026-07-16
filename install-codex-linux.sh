@@ -180,7 +180,7 @@ log "Extracting DMG..."
 "$SEVEN_ZIP" x "$DMG_PATH" -o"$WORK_DIR/extracted" -y >"$WORK_DIR/7z.log" 2>&1 || true
 
 ASAR_PATH="$(find "$WORK_DIR/extracted" -name app.asar -type f 2>/dev/null | head -1)"
-APP_PLIST="$(find "$WORK_DIR/extracted" -path '*/Codex.app/Contents/Info.plist' -type f 2>/dev/null | head -1)"
+APP_PLIST="$(find "$WORK_DIR/extracted" -path '*/Contents/Info.plist' -type f 2>/dev/null | grep -E '/[^/]+\.app/Contents/Info\.plist$' | head -1)"
 APP_RESOURCES_DIR="$(dirname "$ASAR_PATH")"
 CHROME_PLUGIN_SRC="$(find "$WORK_DIR/extracted" -path '*/Contents/Resources/plugins/openai-bundled/plugins/chrome/.codex-plugin/plugin.json' -type f 2>/dev/null | head -1)"
 if [ -n "$CHROME_PLUGIN_SRC" ]; then
@@ -308,6 +308,12 @@ cp "$WORK_DIR/package.generated.json" "$OUTPUT_DIR/package.json"
 
 if [ -f "$APP_RESOURCES_DIR/codexTemplate.png" ]; then
   cp "$APP_RESOURCES_DIR/codexTemplate.png" "$OUTPUT_DIR/icon.png"
+elif [ -f "$APP_RESOURCES_DIR/icon-codex-dark-color.png" ]; then
+  cp "$APP_RESOURCES_DIR/icon-codex-dark-color.png" "$OUTPUT_DIR/icon.png"
+elif [ -f "$APP_RESOURCES_DIR/icon-codex-light.png" ]; then
+  cp "$APP_RESOURCES_DIR/icon-codex-light.png" "$OUTPUT_DIR/icon.png"
+elif [ -f "$APP_RESOURCES_DIR/chatgptTemplate.png" ]; then
+  cp "$APP_RESOURCES_DIR/chatgptTemplate.png" "$OUTPUT_DIR/icon.png"
 elif [ -f "$APP_RESOURCES_DIR/icon.png" ]; then
   cp "$APP_RESOURCES_DIR/icon.png" "$OUTPUT_DIR/icon.png"
 fi
@@ -428,6 +434,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+
+if [ "${CODEX_LINUX_LAUNCHER_LOG:-1}" = "1" ]; then
+  log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/codex-linux"
+  mkdir -p "$log_dir"
+  log_file="$log_dir/launcher.log"
+  if [ -f "$log_file" ] && [ "$(wc -c <"$log_file" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+    mv "$log_file" "$log_file.1" 2>/dev/null || true
+  fi
+  {
+    echo ""
+    echo "[$(date -Is)] launch cwd=$SCRIPT_DIR display=${DISPLAY:-} wayland=${WAYLAND_DISPLAY:-} codex_home=${CODEX_HOME:-<default>}"
+  } >>"$log_file"
+  exec >>"$log_file" 2>&1
+fi
+
 export ELECTRON_RENDERER_URL="file://${SCRIPT_DIR}/webview/index.html"
 export CODEX_CHROME_PLUGIN_ROOT="${SCRIPT_DIR}/plugins/openai-bundled/plugins/chrome"
 
@@ -525,8 +547,14 @@ ensure_managed_codex_shim() {
 }
 
 start_remote_control_daemon() {
-  [ "${CODEX_LINUX_REMOTE_CONTROL:-1}" = "0" ] && return 0
+  [ "${CODEX_LINUX_REMOTE_CONTROL:-0}" = "1" ] || return 0
   [ -x "$CODEX_CLI_PATH" ] || return 0
+  [ "${CODEX_LINUX_ALLOW_CODEX_HOME_WRITES:-0}" = "1" ] || {
+    local log_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-linux"
+    mkdir -p "$log_dir"
+    echo "[$(date -Is)] skipped remote-control startup because CODEX_LINUX_ALLOW_CODEX_HOME_WRITES is not 1" >>"$log_dir/remote-control-daemon.log"
+    return 0
+  }
 
   local log_dir="${XDG_CONFIG_HOME:-$HOME/.config}/codex-linux"
   local log_file="$log_dir/remote-control-daemon.log"
@@ -567,6 +595,7 @@ if [ "${CODEX_LINUX_GRAPHICS_MODE:-stable}" != "native" ]; then
   )
 fi
 
+unset ELECTRON_RUN_AS_NODE
 exec ./node_modules/.bin/electron . --no-sandbox "${linux_graphics_flags[@]}" "$@"
 LAUNCHER
 chmod +x "$OUTPUT_DIR/codex-linux.sh"
@@ -622,21 +651,67 @@ NODE
 # -----------------------------------------------------------------------------
 # Desktop shortcut (best effort)
 # -----------------------------------------------------------------------------
-DESKTOP_FILE="$HOME/.local/share/applications/codex-linux.desktop"
+DESKTOP_FILE="$HOME/.local/share/applications/codex.desktop"
+LEGACY_DESKTOP_FILE="$HOME/.local/share/applications/codex-linux.desktop"
+ICON_THEME_DIR="$HOME/.local/share/icons/hicolor/1024x1024/apps"
+ICON_THEME_512_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
+PIXMAP_DIR="$HOME/.local/share/pixmaps"
 mkdir -p "$(dirname "$DESKTOP_FILE")"
+mkdir -p "$ICON_THEME_DIR"
+mkdir -p "$ICON_THEME_512_DIR"
+mkdir -p "$PIXMAP_DIR"
+if [ ! -f "$HOME/.local/share/icons/hicolor/index.theme" ] && [ -f /usr/share/icons/hicolor/index.theme ]; then
+  cp /usr/share/icons/hicolor/index.theme "$HOME/.local/share/icons/hicolor/index.theme"
+fi
+cp "$OUTPUT_DIR/icon.png" "$ICON_THEME_DIR/codex-linux.png"
+cp "$OUTPUT_DIR/icon.png" "$ICON_THEME_512_DIR/codex-linux.png"
+cp "$OUTPUT_DIR/icon.png" "$PIXMAP_DIR/codex-linux.png"
+chmod 644 "$ICON_THEME_DIR/codex-linux.png" "$ICON_THEME_512_DIR/codex-linux.png" "$PIXMAP_DIR/codex-linux.png"
 cat > "$DESKTOP_FILE" <<DESKTOP
+[Desktop Entry]
+Name=Codex
+Comment=Run Codex desktop app on Linux
+Exec=$OUTPUT_DIR/codex-linux.sh %u
+Path=$OUTPUT_DIR
+Icon=codex-linux
+Terminal=false
+Type=Application
+StartupNotify=true
+StartupWMClass=Codex (Dev)
+Categories=Development;
+Keywords=codex;chatgpt;openai;ai;
+MimeType=x-scheme-handler/codex;
+DESKTOP
+chmod +x "$DESKTOP_FILE"
+gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
+
+cat > "$LEGACY_DESKTOP_FILE" <<DESKTOP
 [Desktop Entry]
 Name=Codex (Linux Port)
 Comment=Run Codex desktop app on Linux (unofficial)
+NoDisplay=true
 Exec=$OUTPUT_DIR/codex-linux.sh %u
+Path=$OUTPUT_DIR
+Icon=codex-linux
 Terminal=false
 Type=Application
+StartupNotify=true
+StartupWMClass=Codex (Dev)
 Categories=Development;
 MimeType=x-scheme-handler/codex;
 DESKTOP
+chmod +x "$LEGACY_DESKTOP_FILE"
+gio set "$LEGACY_DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
+
+DESKTOP_SHORTCUT_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+if [ -d "$DESKTOP_SHORTCUT_DIR" ]; then
+  cp "$DESKTOP_FILE" "$DESKTOP_SHORTCUT_DIR/Codex.desktop"
+  chmod +x "$DESKTOP_SHORTCUT_DIR/Codex.desktop"
+  gio set "$DESKTOP_SHORTCUT_DIR/Codex.desktop" metadata::trusted true 2>/dev/null || true
+fi
 
 if command -v xdg-mime >/dev/null 2>&1; then
-  xdg-mime default codex-linux.desktop x-scheme-handler/codex 2>/dev/null || \
+  xdg-mime default codex.desktop x-scheme-handler/codex 2>/dev/null || \
     warn "Could not register codex:// URL handler with xdg-mime. Auth callbacks may not return to the desktop app automatically."
 else
   warn "xdg-mime not found. Register x-scheme-handler/codex manually if auth callbacks do not return to Codex."
@@ -645,6 +720,81 @@ fi
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
 fi
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+fi
+
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+cat > "$BIN_DIR/codex" <<COMMAND
+#!/bin/bash
+set -euo pipefail
+
+export CODEX_HOME="\${CODEX_HOME:-\$HOME/.codex}"
+
+REAL_CODEX="$CLI_PATH_USED"
+
+if [ ! -x "\$REAL_CODEX" ]; then
+  if [ -x /snap/bin/codex ]; then
+    REAL_CODEX="/snap/bin/codex"
+  else
+    echo "codex: real Codex CLI not found" >&2
+    exit 127
+  fi
+fi
+
+exec "\$REAL_CODEX" "\$@"
+COMMAND
+chmod +x "$BIN_DIR/codex"
+
+cat > "$BIN_DIR/codex-app" <<COMMAND
+#!/bin/bash
+set -euo pipefail
+
+APP="$OUTPUT_DIR/codex-linux.sh"
+LOG_DIR="\${XDG_CACHE_HOME:-\$HOME/.cache}/codex-linux"
+LOG_FILE="\$LOG_DIR/codex-app.log"
+
+export CODEX_HOME="\${CODEX_HOME:-\$HOME/.codex}"
+
+case "\${1:-}" in
+  -h|--help)
+    cat <<'HELP'
+Usage:
+  codex-app              Launch Codex App and detach from this terminal.
+  codex-app --foreground Launch Codex App attached to this terminal.
+
+Logs:
+  ~/.cache/codex-linux/codex-app.log
+  ~/.cache/codex-linux/launcher.log
+HELP
+    exit 0
+    ;;
+esac
+
+if [ "\${1:-}" = "--foreground" ]; then
+  shift
+  exec "\$APP" "\$@"
+fi
+
+if [ ! -x "\$APP" ]; then
+  echo "codex-app: launcher not found or not executable: \$APP" >&2
+  exit 127
+fi
+
+mkdir -p "\$LOG_DIR"
+
+if command -v setsid >/dev/null 2>&1; then
+  setsid -f "\$APP" "\$@" </dev/null >>"\$LOG_FILE" 2>&1
+else
+  nohup "\$APP" "\$@" </dev/null >>"\$LOG_FILE" 2>&1 &
+fi
+
+echo "Codex started."
+echo "Log: \$LOG_FILE"
+COMMAND
+chmod +x "$BIN_DIR/codex-app"
 
 # -----------------------------------------------------------------------------
 # Done

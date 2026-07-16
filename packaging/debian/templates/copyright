@@ -1,0 +1,12 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Codex App Linux
+Source: https://github.com/areu01or00/Codex-App-Linux
+
+Files: *
+Copyright: Codex App Linux contributors
+License: See the source repository and bundled upstream license notices.
+
+Comment:
+ This is an unofficial Linux repackaging of an upstream Codex application
+ payload. It is not affiliated with or endorsed by OpenAI. The package builder
+ does not include user authentication, configuration, logs, caches, or data.
