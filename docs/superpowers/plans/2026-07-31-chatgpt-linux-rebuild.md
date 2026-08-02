@@ -556,7 +556,7 @@ install dependencies
 rebuild native modules
 write launcher and build-info
 load every required native module through Electron-as-Node from staging
-run bounded GUI smoke from staging with remote control disabled
+run bounded GUI smoke from staging in isolated state and an owned process group with remote control disabled
 atomically replace output
 retain the timestamped previous output for rollback
 write/register desktop entry
@@ -573,7 +573,7 @@ Build in:
 STAGING_DIR="${OUTPUT_DIR}.staging.$$"
 ```
 
-Before moving the existing output, validate the five required native modules through Electron-as-Node and run the bounded GUI smoke from staging. On success, move an existing generated output to a timestamped `${OUTPUT_DIR}.previous.*`, move staging into place, and retain that previous output for rollback. If promotion fails, restore it before returning failure. Generate/register desktop integration only after promotion.
+Before moving the existing output, validate the five required native modules through Electron-as-Node and run the bounded GUI smoke from staging. Launch the smoke in isolated HOME/XDG/Codex state and a dedicated process group; terminate only that owned group, and require renderer route/React-root evidence rather than main readiness. On success, move an existing generated output to a timestamped `${OUTPUT_DIR}.previous.*`, move staging into place, and retain that previous output for rollback. If promotion fails, restore it before returning failure. Generate/register desktop integration only after promotion.
 
 - [ ] **Step 5: Implement build metadata and registration**
 

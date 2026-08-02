@@ -106,16 +106,16 @@ CODEX_LINUX_GRAPHICS_MODE=native ./chatgpt-linux.sh
 Normal installation is bound to `compatibility/current.json`. The mutable download URL is not treated as “latest”; an exact cached contract DMG remains valid even if that URL changes.
 
 1. Loads the selected immutable release contract and requires the exact DMG byte size and SHA-256 before extraction. A changed remote `Content-Length` is rejected before download.
-2. Requires the contract's `ChatGPT.app` profile, bundle ID, version/build, architecture, Electron version, main entry, and every required path.
+2. Requires the contract's `ChatGPT.app` profile, bundle ID, version/build, source macOS architecture, target Linux architecture, Electron version, main entry, and every required path.
 3. Uses system Node.js 22.12 or newer; otherwise caches portable Node.js 22.23.2 under `${XDG_CACHE_HOME:-$HOME/.cache}/chatgpt-linux/toolchain` without changing the system installation.
 4. Installs dependencies without running Node-ABI install scripts, downloads the exact Electron runtime, then rebuilds native modules once for that Electron ABI. Network-sensitive stages retry up to three times.
 5. Runs `tools/patch-chatgpt-linux.mjs` for selected Linux feature surfaces. Every patch is version-sensitive and recorded.
-6. Loads `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node from staging, then runs a bounded GUI smoke with remote control disabled.
+6. Loads `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node from staging, then runs a bounded GUI smoke in an isolated state directory and owned process group with remote control disabled.
 7. Promotes only validated staging, restores the old output on promotion failure, and retains one timestamped previous output for rollback.
 8. Generates the launcher and `build-info.json`, then creates desktop integration only after promotion.
 9. Registers the upstream `codex://` scheme so authentication callbacks still reach the application.
 
-`--audit-candidate` is a non-installing path for a future DMG. It writes portable candidate identity and application evidence, then exits before dependency installation, patching, desktop registration, or output promotion.
+`--audit-candidate` is a non-installing path for a future DMG. It derives architecture from the candidate macOS executable, accepts a future bundle ID as evidence instead of as an install contract, writes portable identity/application evidence, then exits before dependency installation, patching, desktop registration, or output promotion. Remote audits always use a new candidate filename and never move or overwrite an earlier candidate in the audit directory.
 
 The patch engine writes `chatgpt-linux/chatgpt-linux-feature-manifest.json` so each install records which Linux patches were applied or skipped.
 

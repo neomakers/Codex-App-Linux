@@ -88,6 +88,41 @@ normalize_linux_arch() {
   esac
 }
 
+detect_macos_app_architecture() {
+  local app_root="$1"
+  local plist="$2"
+  local executable_name executable_path file_output
+  local saw_x64=0
+  local saw_arm64=0
+
+  command -v file >/dev/null 2>&1 || {
+    installer_error "the file utility is required to inspect candidate architecture"
+    return
+  }
+  executable_name=$(plist_value "$plist" CFBundleExecutable)
+  [[ -n "$executable_name" ]] || {
+    installer_error "candidate Info.plist is missing CFBundleExecutable"
+    return
+  }
+  executable_path="$app_root/Contents/MacOS/$executable_name"
+  [[ -f "$executable_path" ]] || {
+    installer_error "candidate executable is missing: Contents/MacOS/$executable_name"
+    return
+  }
+  file_output=$(file -b "$executable_path") || return
+  [[ "$file_output" == *x86_64* ]] && saw_x64=1
+  [[ "$file_output" == *arm64* || "$file_output" == *aarch64* ]] && saw_arm64=1
+  if (( saw_x64 && saw_arm64 )); then
+    printf '%s\n' universal
+  elif (( saw_x64 )); then
+    printf '%s\n' x64
+  elif (( saw_arm64 )); then
+    printf '%s\n' arm64
+  else
+    installer_error "unsupported candidate executable architecture: $file_output"
+  fi
+}
+
 remote_content_length() {
   local url="$1"
   local headers
@@ -137,7 +172,7 @@ if (!releasePath.startsWith(`${root}${path.sep}`)) {
   throw new Error("current release pointer escapes compatibility/");
 }
 const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
-if (release.schemaVersion !== 1) throw new Error("unsupported release contract schema");
+if (release.schemaVersion !== 2) throw new Error("unsupported release contract schema");
 
 const values = [
   releasePath,
@@ -145,7 +180,8 @@ const values = [
   release.application?.bundleId,
   release.application?.version,
   release.application?.build,
-  release.application?.architecture,
+  release.application?.sourceArchitecture,
+  release.application?.targetArchitecture,
   release.application?.electronVersion,
   release.application?.mainEntry,
   release.dmg?.sourceUrl,
@@ -182,7 +218,7 @@ NODE
     return
   }
   mapfile -t contract_lines <<<"$contract_output"
-  (( ${#contract_lines[@]} >= 12 )) || {
+  (( ${#contract_lines[@]} >= 13 )) || {
     installer_error "current release contract is incomplete"
     return
   }
@@ -192,13 +228,14 @@ NODE
   RELEASE_BUNDLE_ID="${contract_lines[2]}"
   RELEASE_APP_VERSION="${contract_lines[3]}"
   RELEASE_APP_BUILD="${contract_lines[4]}"
-  RELEASE_ARCHITECTURE="${contract_lines[5]}"
-  RELEASE_ELECTRON_VERSION="${contract_lines[6]}"
-  RELEASE_MAIN_ENTRY="${contract_lines[7]}"
-  RELEASE_DMG_URL="${contract_lines[8]}"
-  RELEASE_DMG_BYTES="${contract_lines[9]}"
-  RELEASE_DMG_SHA256="${contract_lines[10]}"
-  RELEASE_REQUIRED_PATHS=("${contract_lines[@]:11}")
+  RELEASE_SOURCE_ARCHITECTURE="${contract_lines[5]}"
+  RELEASE_TARGET_ARCHITECTURE="${contract_lines[6]}"
+  RELEASE_ELECTRON_VERSION="${contract_lines[7]}"
+  RELEASE_MAIN_ENTRY="${contract_lines[8]}"
+  RELEASE_DMG_URL="${contract_lines[9]}"
+  RELEASE_DMG_BYTES="${contract_lines[10]}"
+  RELEASE_DMG_SHA256="${contract_lines[11]}"
+  RELEASE_REQUIRED_PATHS=("${contract_lines[@]:12}")
 }
 
 verify_file_identity() {
@@ -227,6 +264,29 @@ verify_file_identity() {
       "DMG SHA-256 mismatch: expected $expected_sha256, found $actual_sha256"
     return
   }
+}
+
+quarantine_file() {
+  local source_file="$1"
+  local reason="$2"
+  local timestamp quarantine_path
+
+  [[ -f "$source_file" ]] || {
+    installer_error "cannot quarantine missing file: $source_file"
+    return
+  }
+  [[ "$reason" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    installer_error "invalid quarantine reason: $reason"
+    return
+  }
+  timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+  quarantine_path="${source_file}.quarantine.${reason}.${timestamp}.$$"
+  [[ ! -e "$quarantine_path" ]] || {
+    installer_error "quarantine path already exists: $quarantine_path"
+    return
+  }
+  mv -- "$source_file" "$quarantine_path" || return
+  printf '%s\n' "$quarantine_path"
 }
 
 require_remote_size_matches_contract() {
@@ -278,7 +338,7 @@ download_resumable() {
       wget --continue --tries=1 --timeout=30 --waitretry=2 \
         -O "$destination" "$url" || true
       if [[ -z "$expected_bytes" ]]; then
-        [[ -f "$destination" ]] && return 0
+        [[ -s "$destination" ]] && return 0
       elif file_size_matches "$destination" "$expected_bytes" >/dev/null 2>&1; then
         return 0
       fi
@@ -298,7 +358,7 @@ download_resumable() {
     curl -fL --retry 0 --connect-timeout 20 -C - \
       -o "$destination" "$url" || true
     if [[ -z "$expected_bytes" ]]; then
-      [[ -f "$destination" ]] && return 0
+      [[ -s "$destination" ]] && return 0
     elif file_size_matches "$destination" "$expected_bytes" >/dev/null 2>&1; then
       return 0
     fi
@@ -470,9 +530,10 @@ extraction_log_has_only_ignored_links() {
 }
 
 validate_contract_payload() {
-  local observed_architecture="$1"
-  local observed_electron="$2"
-  local observed_main="$3"
+  local observed_source_architecture="$1"
+  local observed_target_architecture="$2"
+  local observed_electron="$3"
+  local observed_main="$4"
   local required_path payload_path
 
   [[ "${RELEASE_APPLICATION_PROFILE:-}" == "chatgpt-app-only" ]] || {
@@ -492,9 +553,14 @@ validate_contract_payload() {
     installer_error "application build mismatch with current release contract"
     return
   }
-  [[ "$observed_architecture" == "$RELEASE_ARCHITECTURE" ]] || {
+  [[ "$observed_source_architecture" == "$RELEASE_SOURCE_ARCHITECTURE" ]] || {
     installer_error \
-      "application architecture mismatch: expected $RELEASE_ARCHITECTURE, found $observed_architecture"
+      "source application architecture mismatch: expected $RELEASE_SOURCE_ARCHITECTURE, found $observed_source_architecture"
+    return
+  }
+  [[ "$observed_target_architecture" == "$RELEASE_TARGET_ARCHITECTURE" ]] || {
+    installer_error \
+      "target Linux architecture mismatch: expected $RELEASE_TARGET_ARCHITECTURE, found $observed_target_architecture"
     return
   }
   [[ "$observed_electron" == "$RELEASE_ELECTRON_VERSION" ]] || {
@@ -531,7 +597,7 @@ write_candidate_audit_evidence() {
   local version="$2"
   local build="$3"
   local bundle_id="$4"
-  local architecture="$5"
+  local source_architecture="$5"
   local electron_version="$6"
   local main_entry="$7"
   local dmg_bytes="$8"
@@ -545,7 +611,7 @@ write_candidate_audit_evidence() {
   }
   mkdir -p "$audit_dir" || return
   "$node_bin" - "$audit_dir/candidate-evidence.json" \
-    "$version" "$build" "$bundle_id" "$architecture" \
+    "$version" "$build" "$bundle_id" "$source_architecture" \
     "$electron_version" "$main_entry" "$dmg_bytes" "$dmg_sha256" \
     "$source_url" <<'NODE'
 const fs = require("fs");
@@ -554,7 +620,7 @@ const [
   version,
   build,
   bundleId,
-  architecture,
+  sourceArchitecture,
   electronVersion,
   mainEntry,
   dmgBytes,
@@ -564,7 +630,7 @@ const [
 const evidence = {
   schemaVersion: 1,
   mode: "audit-candidate",
-  application: { version, build, bundleId, architecture, electronVersion, mainEntry },
+  application: { version, build, bundleId, sourceArchitecture, electronVersion, mainEntry },
   dmg: { bytes: Number(dmgBytes), sha256: dmgSha256, sourceUrl },
 };
 fs.writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
@@ -600,27 +666,21 @@ validate_staging_native_modules() {
   }
 }
 
-terminate_processes_for_path() {
-  local marker="$1"
-  local proc pid pgid command_line
-  local -a process_groups=()
+terminate_owned_process_group() {
+  local owned_pgid="$1"
+  local caller_pgid
 
-  for proc in /proc/[0-9]*; do
-    [[ -r "$proc/cmdline" ]] || continue
-    command_line=$(tr '\0' ' ' <"$proc/cmdline" 2>/dev/null || true)
-    [[ "$command_line" == *"$marker"* ]] || continue
-    pid=${proc#/proc/}
-    [[ "$pid" != "$$" ]] || continue
-    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-    [[ "$pgid" =~ ^[1-9][0-9]*$ ]] || continue
-    process_groups+=("$pgid")
-  done
-  for pgid in "${process_groups[@]}"; do
-    kill -TERM -- "-$pgid" 2>/dev/null || true
-  done
-  for pgid in "${process_groups[@]}"; do
-    kill -KILL -- "-$pgid" 2>/dev/null || true
-  done
+  [[ "$owned_pgid" =~ ^[1-9][0-9]*$ ]] || {
+    installer_error "invalid owned GUI process group: $owned_pgid"
+    return
+  }
+  caller_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
+  [[ -n "$caller_pgid" && "$owned_pgid" != "$caller_pgid" ]] || {
+    installer_error "refusing to signal the installer process group"
+    return
+  }
+  kill -TERM -- "-$owned_pgid" 2>/dev/null || true
+  kill -KILL -- "-$owned_pgid" 2>/dev/null || true
 }
 
 run_staging_gui_smoke() {
@@ -628,7 +688,7 @@ run_staging_gui_smoke() {
   local log_file="$2"
   local smoke_seconds="${CHATGPT_GUI_SMOKE_SECONDS:-20}"
   local status=0
-  local started_at elapsed
+  local started_at elapsed smoke_pid smoke_state_dir
 
   [[ "$smoke_seconds" =~ ^[1-9][0-9]*$ ]] && (( smoke_seconds <= 60 )) || {
     installer_error "GUI smoke timeout must be between 1 and 60 seconds"
@@ -638,15 +698,37 @@ run_staging_gui_smoke() {
     installer_error "staging launcher is unavailable"
     return
   }
+  command -v setsid >/dev/null 2>&1 || {
+    installer_error "setsid is required for isolated GUI smoke cleanup"
+    return
+  }
   mkdir -p "$(dirname "$log_file")" || return
+  smoke_state_dir="$(dirname "$log_file")/gui-smoke-state"
+  mkdir -p \
+    "$smoke_state_dir/home" \
+    "$smoke_state_dir/config" \
+    "$smoke_state_dir/cache" \
+    "$smoke_state_dir/data" \
+    "$smoke_state_dir/codex" || return
   started_at=$SECONDS
-  CODEX_LINUX_REMOTE_CONTROL=0 \
-    timeout --foreground --signal=TERM --kill-after=2s "${smoke_seconds}s" \
+  HOME="$smoke_state_dir/home" \
+    XDG_CONFIG_HOME="$smoke_state_dir/config" \
+    XDG_CACHE_HOME="$smoke_state_dir/cache" \
+    XDG_DATA_HOME="$smoke_state_dir/data" \
+    CODEX_HOME="$smoke_state_dir/codex" \
+    CODEX_LINUX_REMOTE_CONTROL=0 \
+    setsid timeout --foreground --signal=TERM --kill-after=2s "${smoke_seconds}s" \
     "$staging_dir/$CHATGPT_LAUNCHER_NAME" \
     --enable-logging --disable-crash-reporter \
-    >"$log_file" 2>&1 || status=$?
+    >"$log_file" 2>&1 &
+  smoke_pid=$!
+  if wait "$smoke_pid"; then
+    status=0
+  else
+    status=$?
+  fi
   elapsed=$((SECONDS - started_at))
-  terminate_processes_for_path "$staging_dir"
+  terminate_owned_process_group "$smoke_pid" || return
 
   if (( (status != 124 && status != 137) || elapsed < smoke_seconds )); then
     installer_error \
@@ -654,10 +736,10 @@ run_staging_gui_smoke() {
     return
   fi
   if ! grep -Eiq \
-    'mounted (the )?application route|application route .*mounted|main app\.whenReady resolved' \
+    'mounted (the )?application route|application route .*mounted|React root render requested' \
     "$log_file"; then
     installer_error \
-      "GUI smoke stayed alive but did not log a mounted application route; see $log_file"
+      "GUI smoke stayed alive but did not log renderer route/root evidence; see $log_file"
     return
   fi
 }
@@ -1032,6 +1114,9 @@ discover_chatgpt_payload() {
 }
 
 validate_chatgpt_payload() {
+  local expected_bundle_id="${1:-}"
+  local observed_bundle_id
+
   [[ -d "${CHATGPT_APP_ROOT:-}" ]] || {
     installer_error "missing ChatGPT.app root"
     return
@@ -1040,10 +1125,15 @@ validate_chatgpt_payload() {
     installer_error "missing Info.plist"
     return
   }
-  [[ "$(plist_value "$CHATGPT_PLIST" CFBundleIdentifier)" == "$CHATGPT_BUNDLE_ID" ]] || {
-    installer_error "unexpected bundle identifier in Info.plist"
+  observed_bundle_id=$(plist_value "$CHATGPT_PLIST" CFBundleIdentifier)
+  [[ -n "$observed_bundle_id" ]] || {
+    installer_error "missing bundle identifier in Info.plist"
     return
   }
+  if [[ -n "$expected_bundle_id" && "$observed_bundle_id" != "$expected_bundle_id" ]]; then
+    installer_error "unexpected bundle identifier in Info.plist"
+    return
+  fi
   [[ -d "${CHATGPT_RESOURCES:-}" ]] || {
     installer_error "missing Resources directory"
     return

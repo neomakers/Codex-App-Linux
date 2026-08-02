@@ -54,7 +54,7 @@ Capture redirect/final-URL metadata when the HTTP client does not include it in 
 
 ## 3. Extract and audit before editing
 
-Use the non-installing audit mode to capture the candidate's version, build, bundle ID, architecture, Electron version, main entry, DMG size/SHA-256, and source identity. It exits before dependency installation, patching, desktop registration, or output promotion.
+Use the non-installing audit mode to capture the candidate's version, build, bundle ID, executable architecture, Electron version, main entry, DMG size/SHA-256, and source identity. Architecture must be derived from the candidate macOS executable, not the audit host. A future bundle ID is evidence in audit mode, not permission to install it. The audit exits before dependency installation, patching, desktop registration, or output promotion. A remote audit uses a new candidate filename and never moves or overwrites earlier candidate evidence.
 
 ```bash
 ./install-chatgpt-linux.sh --audit-candidate --dmg "$candidate" \
@@ -96,7 +96,7 @@ Confirm generated build information records the candidate hash, version/build, E
 
 ## 6. Stage, smoke test, and atomically promote
 
-The installer must build completely in staging and retain the previous working output until validation succeeds. Before any output move, load `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node, then run the bounded GUI smoke from staging with `CODEX_LINUX_REMOTE_CONTROL=0`. Success requires the intentional timeout plus a mounted application route in the log. Record a result that covers:
+The installer must build completely in staging and retain the previous working output until validation succeeds. Before any output move, load `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node, then run the bounded GUI smoke from staging with `CODEX_LINUX_REMOTE_CONTROL=0`. Run it in a dedicated state directory and an installer-owned process group; cleanup may signal only that exact group, never processes discovered globally by pathname. Success requires the intentional timeout plus renderer evidence from either a mounted application route or the renderer's React-root request—not main-process readiness alone. Record a result that covers:
 
 1. Application launch without an Electron ABI or native-module error.
 2. Desktop entry and preserved `codex://` callback handling.

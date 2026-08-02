@@ -1,11 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "application": {
     "profile": "chatgpt-app-only",
     "bundleId": "com.openai.codex",
     "version": "26.727.40816",
     "build": "6067",
-    "architecture": "x64",
+    "sourceArchitecture": "arm64",
+    "targetArchitecture": "x64",
     "electronVersion": "42.3.0",
     "mainEntry": ".vite/build/early-bootstrap.js"
   },

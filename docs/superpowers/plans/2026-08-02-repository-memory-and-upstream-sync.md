@@ -33,7 +33,7 @@
 
 - [ ] **Step 1: Write the failing contract test**
 
-The test must resolve `compatibility/current.json`, reject absolute or escaping pointers, load the selected release, require `schemaVersion: 1`, `profile: "chatgpt-app-only"`, preserved internal bundle ID `com.openai.codex`, exact version/build/Electron/main entry values, a 64-character lowercase DMG hash, allowed feature status and verification enums, and no `/home/`, `/Users/`, or Windows drive path anywhere in serialized JSON.
+The test must resolve `compatibility/current.json`, reject absolute or escaping pointers, load the selected release, require `schemaVersion: 2`, `profile: "chatgpt-app-only"`, preserved internal bundle ID `com.openai.codex`, distinct source-macOS and target-Linux architectures, exact version/build/Electron/main entry values, a 64-character lowercase DMG hash, allowed feature status and verification enums, and no `/home/`, `/Users/`, or Windows drive path anywhere in serialized JSON.
 
 ```js
 const allowedStatus = new Set(["verified", "partial", "skipped", "not-shipped", "unsupported"]);
@@ -85,7 +85,7 @@ Expected: all tests pass.
 
 Keep `AGENTS.md` short and normative. Put the full fetch → evidence → non-installing candidate audit → TDD → ABI rebuild in staging → Electron-native-module validation → bounded staging GUI smoke → rollback-safe promotion → release contract → branch/PR sequence in `UPGRADING.md`, including cache identity rules and the separate-profile requirement for any future Codex.app fallback.
 
-Normal installation must load `compatibility/current.json`, enforce its exact DMG size/SHA-256 and application metadata/required paths, and reject a changed remote size before download. Unknown releases use `--audit-candidate` and cannot promote output. Remote control defaults off, the software device-key provider remains unsupported/skipped, the launcher records its persistent Node/npm runtime, downloads have bounded attempts, and desktop registration follows successful promotion only.
+Normal installation must load `compatibility/current.json`, enforce its exact DMG size/SHA-256 and application metadata/required paths, and reject a changed remote size before download. Unknown releases use `--audit-candidate`, derive architecture from the candidate executable, preserve earlier audit artifacts, and cannot promote output. Remote control defaults off, the software device-key provider remains unsupported/skipped, the launcher records its persistent Node/npm runtime, GUI smoke uses isolated state and an owned process group, downloads have bounded attempts, and desktop registration follows successful promotion only.
 
 - [ ] **Step 2: Mark old contracts as historical evidence**
 

@@ -334,10 +334,11 @@ fixture="$TEST_TMPDIR/payload"
 make_chatgpt_fixture "$fixture"
 assert_ok discover_chatgpt_payload "$fixture"
 assert_eq "$fixture/ChatGPT Installer/ChatGPT.app" "$CHATGPT_APP_ROOT"
-assert_ok validate_chatgpt_payload
+assert_ok validate_chatgpt_payload "$CHATGPT_BUNDLE_ID"
 
 rm -rf "$fixture/ChatGPT Installer/ChatGPT.app/Contents/Resources/app.asar.unpacked"
-assert_fail_with "missing app.asar.unpacked" validate_chatgpt_payload
+assert_fail_with "missing app.asar.unpacked" \
+  validate_chatgpt_payload "$CHATGPT_BUNDLE_ID"
 
 fixture="$TEST_TMPDIR/codex-only"
 make_codex_fixture "$fixture"

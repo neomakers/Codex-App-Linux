@@ -42,7 +42,7 @@ After validation, publish through a pull request and merge it into `main`. Keep 
 
 `compatibility/current.json` points to one file under `compatibility/releases/`. The current contract records:
 
-- application profile, bundle ID, version, build, architecture, main entry, and exact Electron version;
+- application profile, bundle ID, version, build, source macOS architecture, target Linux architecture, main entry, and exact Electron version;
 - DMG source URL, observed size, SHA-256, and observation time;
 - installer and pinned toolchain versions;
 - original upstream and fork baseline commits;

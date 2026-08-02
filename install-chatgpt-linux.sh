@@ -207,11 +207,9 @@ if (( AUDIT_CANDIDATE )); then
     [[ -f "$DMG_PATH" ]] || die "DMG not found: $DMG_PATH"
     DMG_SOURCE_URL="$AUDIT_SOURCE_URL"
   else
-    DMG_PATH="$AUDIT_OUTPUT/candidate.dmg"
-    if [[ -f "$DMG_PATH" ]]; then
-      mv -- "$DMG_PATH" "$WORK_DIR/existing-audit-candidate.dmg"
-      warn "preserved the prior audit candidate; mutable candidate downloads are not resumed"
-    fi
+    audit_candidate_dir="$(mktemp -d "$AUDIT_OUTPUT/candidate-XXXXXXXX")" ||
+      die "cannot create a unique audit candidate directory"
+    DMG_PATH="$audit_candidate_dir/candidate.dmg"
     if command -v curl >/dev/null 2>&1; then
       EXPECTED_DMG_BYTES="$(remote_content_length "$DEFAULT_DMG_URL" 2>/dev/null || true)"
     fi
@@ -249,8 +247,9 @@ else
       if [[ -f "$DMG_PATH" ]]; then
         cached_bytes=$(stat -c%s "$DMG_PATH")
         if (( resume_compatible == 0 || cached_bytes >= RELEASE_DMG_BYTES )); then
-          mv -- "$DMG_PATH" "$WORK_DIR/invalid-cached.dmg"
-          warn "preserved an identity-incompatible cache before a fresh download"
+          quarantine_path=$(quarantine_file "$DMG_PATH" identity-mismatch) ||
+            die "failed to quarantine an identity-incompatible cache"
+          warn "preserved an identity-incompatible cache at $quarantine_path"
         fi
       fi
       log "Downloading or resuming the selected release DMG with bounded retries"
@@ -296,8 +295,13 @@ fi
 
 discover_chatgpt_payload "$EXTRACTED_DIR" ||
   die "unsupported DMG layout"
-validate_chatgpt_payload ||
-  die "ChatGPT.app payload validation failed"
+if (( AUDIT_CANDIDATE )); then
+  validate_chatgpt_payload ||
+    die "ChatGPT.app payload validation failed"
+else
+  validate_chatgpt_payload "$CHATGPT_BUNDLE_ID" ||
+    die "ChatGPT.app payload validation failed"
+fi
 
 APP_VERSION="$(plist_value "$CHATGPT_PLIST" CFBundleShortVersionString)"
 APP_BUILD="$(plist_value "$CHATGPT_PLIST" CFBundleVersion)"
@@ -318,8 +322,11 @@ cp -a "$CHATGPT_ASAR_UNPACKED/." "$APP_SOURCE/" ||
   die "extracted app is missing package.json"
 
 APP_BUNDLE_ID="$(plist_value "$CHATGPT_PLIST" CFBundleIdentifier)"
-APP_ARCHITECTURE="$(normalize_linux_arch)" ||
+APP_ARCHITECTURE="$(detect_macos_app_architecture \
+  "$CHATGPT_APP_ROOT" "$CHATGPT_PLIST")" ||
   die "unsupported candidate architecture"
+TARGET_ARCHITECTURE="$(normalize_linux_arch)" ||
+  die "unsupported target Linux architecture"
 APP_MAIN_ENTRY="$("$NODE_BIN" -e \
   'const p=require(process.argv[1]); process.stdout.write(p.main || "")' \
   "$APP_SOURCE/package.json")"
@@ -343,7 +350,8 @@ if (( AUDIT_CANDIDATE )); then
 fi
 
 validate_contract_payload \
-  "$APP_ARCHITECTURE" "$ELECTRON_RUNTIME_VERSION" "$APP_MAIN_ENTRY" ||
+  "$APP_ARCHITECTURE" "$TARGET_ARCHITECTURE" \
+  "$ELECTRON_RUNTIME_VERSION" "$APP_MAIN_ENTRY" ||
   die "ChatGPT.app does not match the current release contract"
 success "Extracted application metadata and required paths match the release contract"
 

@@ -8,7 +8,8 @@ TEST_FAILURES=0
 ORIGINAL_PATH="$PATH"
 
 cleanup() {
-  local proc pid pgid command_line
+  local proc pid pgid caller_pgid command_line
+  caller_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
   for proc in /proc/[0-9]*; do
     [[ -r "$proc/cmdline" ]] || continue
     command_line=$(tr '\0' ' ' <"$proc/cmdline" 2>/dev/null || true)
@@ -17,6 +18,7 @@ cleanup() {
     [[ "$pid" != "$$" ]] || continue
     pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
     [[ "$pgid" =~ ^[1-9][0-9]*$ ]] || continue
+    [[ "$pgid" != "$caller_pgid" ]] || continue
     kill -TERM -- "-$pgid" 2>/dev/null || true
     kill -KILL -- "-$pgid" 2>/dev/null || true
   done
@@ -80,9 +82,59 @@ write_plist() {
   <string>${version}</string>
   <key>CFBundleVersion</key>
   <string>${build}</string>
+  <key>CFBundleExecutable</key>
+  <string>ChatGPT</string>
 </dict>
 </plist>
 EOF
+}
+
+make_audit_cli_fakes() {
+  local bin_dir="$1"
+
+  mkdir -p "$bin_dir"
+  cat >"$bin_dir/node" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'v22.23.2\n'
+  exit 0
+fi
+exec /usr/bin/node "$@"
+EOF
+  cat >"$bin_dir/npm" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  printf '10.9.2\n'
+  exit 0
+fi
+destination="${@: -1}"
+mkdir -p "$destination"
+cp -a "$AUDIT_FIXTURE_APP_SOURCE/." "$destination/"
+EOF
+  cat >"$bin_dir/7z" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "t" ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "x" ]]; then
+  destination=''
+  for argument in "$@"; do
+    case "$argument" in
+      -o*) destination="${argument#-o}" ;;
+    esac
+  done
+  [[ -n "$destination" ]] || exit 71
+  mkdir -p "$destination"
+  cp -a "$AUDIT_FIXTURE_PAYLOAD/." "$destination/"
+  exit 0
+fi
+exit 72
+EOF
+  cat >"$bin_dir/file" <<'EOF'
+#!/usr/bin/env bash
+printf 'Mach-O 64-bit executable arm64\n'
+EOF
+  chmod +x "$bin_dir/node" "$bin_dir/npm" "$bin_dir/7z" "$bin_dir/file"
 }
 
 make_complete_payload() {
@@ -153,13 +205,25 @@ assert_eq chatgpt-app-only "$RELEASE_APPLICATION_PROFILE"
 assert_eq com.openai.codex "$RELEASE_BUNDLE_ID"
 assert_eq 26.727.40816 "$RELEASE_APP_VERSION"
 assert_eq 6067 "$RELEASE_APP_BUILD"
-assert_eq x64 "$RELEASE_ARCHITECTURE"
+assert_eq arm64 "$RELEASE_SOURCE_ARCHITECTURE"
+assert_eq x64 "$RELEASE_TARGET_ARCHITECTURE"
 assert_eq 42.3.0 "$RELEASE_ELECTRON_VERSION"
 assert_eq .vite/build/early-bootstrap.js "$RELEASE_MAIN_ENTRY"
 assert_eq 609303023 "$RELEASE_DMG_BYTES"
 assert_eq fb93a239c811c7639cf45a90ff36c262fa0290640140cd12da3fdc60b62255ae \
   "$RELEASE_DMG_SHA256"
 assert_eq 4 "${#RELEASE_REQUIRED_PATHS[@]}"
+
+# Break caught: an incompatible cache is moved into cleanup-owned storage and
+# deleted even though the installer reports it as preserved.
+fixture="$TEST_TMPDIR/quarantine"
+mkdir -p "$fixture"
+printf incompatible >"$fixture/ChatGPT-latest.dmg"
+quarantine_path=$(quarantine_file "$fixture/ChatGPT-latest.dmg" identity-mismatch)
+[[ ! -e "$fixture/ChatGPT-latest.dmg" ]] ||
+  fail "quarantined cache remained at the active cache path"
+assert_eq incompatible "$(<"$quarantine_path")"
+assert_eq "$fixture" "$(dirname "$quarantine_path")"
 
 # Break caught: a same-size but wrong-hash DMG reaches extraction.
 fixture="$TEST_TMPDIR/identity"
@@ -190,12 +254,13 @@ PATH="$ORIGINAL_PATH"
 fixture="$TEST_TMPDIR/payload"
 make_complete_payload "$fixture"
 assert_ok discover_chatgpt_payload "$fixture"
-assert_ok validate_contract_payload x64 42.3.0 .vite/build/early-bootstrap.js
+assert_ok validate_contract_payload \
+  arm64 x64 42.3.0 .vite/build/early-bootstrap.js
 assert_fail_with "main entry mismatch" \
-  validate_contract_payload x64 42.3.0 wrong-main.js
+  validate_contract_payload arm64 x64 42.3.0 wrong-main.js
 rm -rf "$fixture/ChatGPT Installer/ChatGPT.app/Contents/Resources/plugins"
 assert_fail_with "required release path is missing" \
-  validate_contract_payload x64 42.3.0 .vite/build/early-bootstrap.js
+  validate_contract_payload arm64 x64 42.3.0 .vite/build/early-bootstrap.js
 
 # Break caught: candidate audit overwrites/promotes the current installation.
 fixture="$TEST_TMPDIR/audit"
@@ -211,6 +276,77 @@ assert_file_contains "$fixture/audit/candidate-evidence.json" '"sourceUrl": "htt
 if grep -Fq "$ROOT_DIR" "$fixture/audit/candidate-evidence.json"; then
   fail "candidate evidence contains a machine-local repository path"
 fi
+
+# Break caught: audit orchestration rejects a future bundle, records host rather
+# than candidate architecture, or mutates an existing installation.
+fixture="$TEST_TMPDIR/audit-cli"
+payload_root="$fixture/payload/ChatGPT Installer/ChatGPT.app"
+app_source="$fixture/app-source"
+mkdir -p \
+  "$payload_root/Contents/MacOS" \
+  "$payload_root/Contents/Resources/app.asar.unpacked" \
+  "$app_source" "$fixture/audit" "$fixture/current-output" "$fixture/home"
+write_plist "$payload_root/Contents/Info.plist" \
+  com.example.future-chatgpt 27.1.2 7000
+: >"$payload_root/Contents/MacOS/ChatGPT"
+: >"$payload_root/Contents/Resources/app.asar"
+printf '{"main":"future-main.js","devDependencies":{"electron":"43.0.0"}}\n' \
+  >"$app_source/package.json"
+printf old >"$fixture/current-output/sentinel"
+printf audit-dmg >"$fixture/future.dmg"
+make_audit_cli_fakes "$fixture/bin"
+assert_ok env \
+  PATH="$fixture/bin:/usr/bin:/bin" \
+  HOME="$fixture/home" XDG_CACHE_HOME="$fixture/cache" \
+  AUDIT_FIXTURE_PAYLOAD="$fixture/payload" \
+  AUDIT_FIXTURE_APP_SOURCE="$app_source" \
+  "$ROOT_DIR/install-chatgpt-linux.sh" \
+    --audit-candidate \
+    --dmg "$fixture/future.dmg" \
+    --audit-source-url https://example.invalid/future.dmg \
+    --audit-output "$fixture/audit" \
+    --output "$fixture/current-output"
+assert_eq old "$(<"$fixture/current-output/sentinel")"
+assert_file_contains "$fixture/audit/candidate-evidence.json" \
+  '"bundleId": "com.example.future-chatgpt"'
+assert_file_contains "$fixture/audit/candidate-evidence.json" \
+  '"sourceArchitecture": "arm64"'
+
+# Break caught: a remote audit says an existing candidate was preserved but
+# moves it into cleanup-owned storage and deletes it on failure.
+fixture="$TEST_TMPDIR/audit-existing-candidate"
+mkdir -p "$fixture/audit" "$fixture/home"
+printf keep-this-candidate >"$fixture/audit/candidate.dmg"
+make_audit_cli_fakes "$fixture/bin"
+cat >"$fixture/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'HTTP/2 200\r\nContent-Length: 10\r\n\r\n'
+EOF
+cat >"$fixture/bin/wget" <<'EOF'
+#!/usr/bin/env bash
+destination=''
+while (( $# > 0 )); do
+  if [[ "$1" == "-O" ]]; then
+    destination="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+/usr/bin/truncate -s 4 "$destination"
+exit 1
+EOF
+chmod +x "$fixture/bin/curl" "$fixture/bin/wget"
+if env \
+  PATH="$fixture/bin:/usr/bin:/bin" \
+  HOME="$fixture/home" XDG_CACHE_HOME="$fixture/cache" \
+  CHATGPT_DOWNLOAD_ATTEMPTS=1 \
+  "$ROOT_DIR/install-chatgpt-linux.sh" \
+    --audit-candidate --audit-output "$fixture/audit" \
+    >"$fixture/install.log" 2>&1; then
+  fail "expected the deliberately short audit download to fail"
+fi
+assert_eq keep-this-candidate "$(<"$fixture/audit/candidate.dmg")"
 
 # Break caught: validation is skipped or promotion runs before native/GUI checks.
 fixture="$TEST_TMPDIR/order"
@@ -280,12 +416,21 @@ fixture="$TEST_TMPDIR/gui"
 mkdir -p "$fixture"
 cat >"$fixture/chatgpt-linux.sh" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${SMOKE_ENV_CAPTURE:-}" ]]; then
+  printf 'HOME=%s\nCODEX_HOME=%s\nXDG_CONFIG_HOME=%s\n' \
+    "$HOME" "$CODEX_HOME" "$XDG_CONFIG_HOME" >"$SMOKE_ENV_CAPTURE"
+fi
 printf 'mounted application route /\n'
 sleep 2
 EOF
 chmod +x "$fixture/chatgpt-linux.sh"
-CHATGPT_GUI_SMOKE_SECONDS=1 assert_ok \
+SMOKE_ENV_CAPTURE="$fixture/gui-env.log" \
+  CHATGPT_GUI_SMOKE_SECONDS=1 assert_ok \
   run_staging_gui_smoke "$fixture" "$fixture/gui.log"
+assert_file_contains "$fixture/gui-env.log" \
+  "HOME=$fixture/gui-smoke-state/home"
+assert_file_contains "$fixture/gui-env.log" \
+  "CODEX_HOME=$fixture/gui-smoke-state/codex"
 cat >"$fixture/chatgpt-linux.sh" <<'EOF'
 #!/usr/bin/env bash
 printf 'mounted application route /\n'
@@ -294,6 +439,15 @@ EOF
 chmod +x "$fixture/chatgpt-linux.sh"
 CHATGPT_GUI_SMOKE_SECONDS=1 assert_fail_with "GUI smoke exited before its timeout" \
   run_staging_gui_smoke "$fixture" "$fixture/gui-crash.log"
+cat >"$fixture/chatgpt-linux.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'main app.whenReady resolved\n'
+sleep 2
+EOF
+chmod +x "$fixture/chatgpt-linux.sh"
+CHATGPT_GUI_SMOKE_SECONDS=1 assert_fail_with \
+  "did not log renderer route/root evidence" \
+  run_staging_gui_smoke "$fixture" "$fixture/gui-no-route.log"
 cat >"$fixture/chatgpt-linux.sh" <<'EOF'
 #!/usr/bin/env bash
 trap '' TERM
@@ -307,6 +461,36 @@ CHATGPT_GUI_SMOKE_SECONDS=1 assert_ok \
 smoke_elapsed=$(($(date +%s) - smoke_started))
 (( smoke_elapsed <= 4 )) ||
   fail "GUI smoke did not force-clean a TERM-resistant Electron process"
+
+# Break caught: pathname-based cleanup kills the caller's own process group.
+# The whole RED scenario runs in an isolated session so the test runner survives
+# the broken implementation and can report the failure.
+fixture="$TEST_TMPDIR/gui-process-isolation"
+mkdir -p "$fixture"
+cat >"$fixture/chatgpt-linux.sh" <<'EOF'
+#!/usr/bin/env bash
+trap '' TERM
+printf 'mounted application route /\n'
+while :; do sleep 1; done
+EOF
+chmod +x "$fixture/chatgpt-linux.sh"
+if ! timeout --kill-after=1s 8s setsid bash -c '
+  set -Eeuo pipefail
+  source "$1"
+  marker="$2"
+  log_file="$3"
+  bash -c "exec -a $marker/unrelated-sentinel sleep 30" &
+  sentinel=$!
+  trap "kill $sentinel 2>/dev/null || true; wait $sentinel 2>/dev/null || true" EXIT
+  CHATGPT_GUI_SMOKE_SECONDS=1 run_staging_gui_smoke "$marker" "$log_file"
+  kill -0 "$sentinel"
+  printf "parent-and-unrelated-sentinel-survived\n"
+' bash "$ROOT_DIR/lib/chatgpt-installer.sh" "$fixture" "$fixture/gui.log" \
+  >"$fixture/isolation.log" 2>&1; then
+  fail "GUI smoke killed its caller group or leaked its owned process group"
+fi
+assert_file_contains "$fixture/isolation.log" \
+  'parent-and-unrelated-sentinel-survived'
 
 # Break caught: launcher uses PATH Node, starts remote control by default, or lies about key protection.
 fixture="$TEST_TMPDIR/launcher"
@@ -366,6 +550,39 @@ assert_fail_with "download remained incomplete after 3 attempts" \
   bash "$ROOT_DIR/lib/chatgpt-installer.sh" "$fixture/bin:/usr/bin:/bin" \
   https://example.invalid/ChatGPT.dmg "$fixture/candidate.dmg"
 assert_eq 3 "$(<"$fixture/count")"
+PATH="$ORIGINAL_PATH"
+
+# Break caught: unknown-length downloads accept a pre-created empty file as a
+# successful candidate even when every transfer fails.
+fixture="$TEST_TMPDIR/unknown-length"
+mkdir -p "$fixture/bin"
+cat >"$fixture/bin/wget" <<'EOF'
+#!/usr/bin/env bash
+destination=''
+while (( $# > 0 )); do
+  if [[ "$1" == "-O" ]]; then
+    destination="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+: >"$destination"
+exit 1
+EOF
+cat >"$fixture/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$fixture/bin/wget" "$fixture/bin/curl"
+: >"$fixture/candidate.dmg"
+PATH="$fixture/bin:/usr/bin:/bin"
+assert_fail_with "download remained incomplete after 1 attempts" \
+  env CHATGPT_DOWNLOAD_ATTEMPTS=1 bash -c \
+    'source "$1"; PATH="$2"; download_resumable "$3" "$4"' \
+    bash "$ROOT_DIR/lib/chatgpt-installer.sh" \
+    "$fixture/bin:/usr/bin:/bin" https://example.invalid/unknown.dmg \
+    "$fixture/candidate.dmg"
 PATH="$ORIGINAL_PATH"
 
 if (( TEST_FAILURES > 0 )); then
