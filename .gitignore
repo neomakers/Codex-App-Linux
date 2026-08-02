@@ -1,8 +1,11 @@
-# Downloaded official Codex DMG. Keep this out of git.
+# Downloaded official ChatGPT DMG. Keep this out of git.
+ChatGPT-latest.dmg
 *.dmg
 
 # Generated Linux app output.
-codex-linux/
+chatgpt-linux/
+chatgpt-linux.staging.*
+chatgpt-linux.previous.*
 
 # Temporary extraction/build output.
 tmp/
@@ -16,3 +19,7 @@ npm-debug.log*
 
 # Local pasted screenshots before sanitizing them into demo/.
 Pasted image.png
+
+# Local agent/worktree scratch state.
+.superpowers/
+.worktrees/
