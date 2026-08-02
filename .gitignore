@@ -20,6 +20,6 @@ npm-debug.log*
 # Local pasted screenshots before sanitizing them into demo/.
 Pasted image.png
 
-# Local agent/worktree scratch state.
+# Local agent/worktree scratch state. Never commit agent plans or reports.
 .superpowers/
 .worktrees/

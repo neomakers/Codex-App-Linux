@@ -23,6 +23,8 @@ Only the current DMG layout containing `ChatGPT.app` is supported. Older DMGs co
 
 Run the installer and it builds a runnable `chatgpt-linux/` directory plus a **ChatGPT Linux** desktop entry.
 
+For a later DMG release, follow [UPGRADING.md](UPGRADING.md) and compare it with the [current compatibility contract](compatibility/current.json). Those files are the current source of upgrade truth.
+
 ## Why this exists
 
 The current ChatGPT desktop package is Electron-based. The installer extracts `ChatGPT.app`, removes dependencies that cannot be installed on Linux, rebuilds native modules for the bundled Electron version, and stages the result under Linux-specific user-visible names.
@@ -66,8 +68,8 @@ If you are inside an existing generated `chatgpt-linux/` folder, run `cd ..` fir
 ### Option B: clone and run
 
 ```bash
-git clone https://github.com/areu01or00/Codex-App-Linux.git
-cd Codex-App-Linux
+git clone https://github.com/neomakers/ChatGPT-App-Linux.git
+cd ChatGPT-App-Linux
 chmod +x install-chatgpt-linux.sh
 ./install-chatgpt-linux.sh
 ```
@@ -272,7 +274,9 @@ That is the correct setup: this repo distributes the installer and docs only, no
 
 - `install-chatgpt-linux.sh`: one-click installer
 - `.gitignore`: excludes downloaded DMGs and generated install output
-- `Reverse-engineering-guide.md`: technical breakdown of the original approach
+- `UPGRADING.md`: canonical evidence, audit, rebuild, and release workflow
+- `compatibility/current.json`: pointer to the current executable release contract
+- `Reverse-engineering-guide.md`: historical technical evidence from the original approach
 - `README.md`: usage and troubleshooting
 
 ## Legal

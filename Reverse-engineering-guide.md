@@ -1,8 +1,10 @@
 # Reverse Engineering OpenAI Codex macOS App for Linux
 
+> **Historical evidence — not current instructions.** The observed `Codex.app` release, filenames, paths, and installer guidance below are preserved for forensic comparison. For the current ChatGPT.app-only workflow and release truth, use [UPGRADING.md](UPGRADING.md) and [compatibility/current.json](compatibility/current.json).
+
 A technical deep-dive into extracting, analyzing, and porting the OpenAI Codex desktop application from macOS to Linux through binary analysis and runtime patching.
 
-This document is the base installer and package-conversion guide. Feature-specific ports now live in `Reverse-engineering-guide-index.md` and the linked feature contracts. Before changing code for Browser Use, Chrome Control, App Snapshot, Computer Use, or Mobile Pairing, update the relevant contract first.
+This document preserves the historical base installer and package-conversion research. Feature-specific historical evidence lives in `Reverse-engineering-guide-index.md` and the linked feature contracts; use the runbook and current release contract before making a current change.
 
 **Instructions for Claude**: Execute these steps to port the OpenAI Codex desktop app from macOS (.dmg) to Linux. Run all commands using Bash. The user should have the `Codex.dmg` file available.
 

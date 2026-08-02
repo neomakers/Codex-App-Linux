@@ -81,27 +81,23 @@ Expected: all tests pass.
 - Consumes: the design spec and release contract from Task 1.
 - Produces: one stable policy entrypoint, one canonical upgrade runbook, and clearly marked historical documents.
 
-- [ ] **Step 1: Add policy-content assertions**
-
-Run a shell assertion that initially fails until `AGENTS.md` and `UPGRADING.md` contain `ChatGPT.app`, `compatibility/current.json`, `codex://`, `electron-rebuild`, `atomic`, and `bash tests/run-all.sh`.
-
-- [ ] **Step 2: Write the policy and runbook**
+- [ ] **Step 1: Write the policy and runbook**
 
 Keep `AGENTS.md` short and normative. Put the full fetch → evidence → audit → TDD → ABI rebuild → staged install → GUI smoke → release contract → branch/PR sequence in `UPGRADING.md`, including cache identity rules and the separate-profile requirement for any future Codex.app fallback.
 
-- [ ] **Step 3: Mark old contracts as historical evidence**
+- [ ] **Step 2: Mark old contracts as historical evidence**
 
 Add a banner to the legacy reverse-engineering and feature-contract documents saying their observed Codex.app release and filenames are historical, while `UPGRADING.md` plus `compatibility/current.json` own current truth.
 
-- [ ] **Step 4: Update repository links and ignore local agent artifacts**
+- [ ] **Step 3: Update repository links and ignore local agent artifacts**
 
 Point README clone/raw links at the writable ChatGPT project name, add links to the runbook and compatibility contract, and ignore `.superpowers/` while continuing to ignore DMGs and generated applications.
 
-- [ ] **Step 5: Verify documentation assertions**
+- [ ] **Step 4: Review documentation and verify repository links**
 
-Run the exact shell assertion from Step 1 and `bash tests/run-all.sh`.
+Read the changed documentation as rendered Markdown, verify every repository-relative link target exists, confirm no current instructions point at retired installer paths, and run `bash tests/run-all.sh`. Human/agent prose does not gain source-grep tests; its value is enforced through the canonical ownership rules and executable release contract.
 
-Expected: all assertions and tests pass.
+Expected: documentation is internally consistent, link targets exist, and all tests pass.
 
 ### Task 3: Make generated feature claims match evidence
 
