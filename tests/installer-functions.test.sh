@@ -428,7 +428,7 @@ mkdir -p "$fixture/work"
 make_fake_debian_7zip_tools "$fixture/bin"
 PATH="$fixture/bin:/usr/bin:/bin"
 CHATGPT_DISTRO_ID=debian
-assert_ok resolve_7zip "$fixture/work"
+assert_ok resolve_7zip "$fixture/work" 0
 assert_eq "$fixture/work/7zip-root/usr/lib/7zip/7z" "$SEVEN_ZIP"
 
 mkdir -p "$fixture/dnf-bin" "$fixture/pacman-bin" "$fixture/zypper-bin"
@@ -442,7 +442,7 @@ EOF
   chmod +x "$fixture/$1-bin/$1" "$fixture/$1-bin/apt-get"
   PATH="$fixture/$1-bin:/usr/bin:/bin"
   CHATGPT_DISTRO_ID="$2"
-  assert_fail_with "$1" resolve_7zip "$fixture/$2-work"
+  assert_fail_with "$1" resolve_7zip "$fixture/$2-work" 0
 done
 unset CHATGPT_DISTRO_ID
 PATH="$ORIGINAL_PATH"

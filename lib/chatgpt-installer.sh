@@ -419,6 +419,7 @@ resolve_node() {
 
 resolve_7zip() {
   local work_dir="$1"
+  local allow_system_lookup="${2:-1}"
   local package_dir root_dir distro_id distro_like distro_tags
   local ID ID_LIKE
 
@@ -436,9 +437,12 @@ resolve_7zip() {
   fi
   distro_tags="$distro_id $distro_like"
 
-  SEVEN_ZIP=$(command -v 7z 2>/dev/null || true)
-  if [[ -z "$SEVEN_ZIP" ]]; then
-    SEVEN_ZIP=$(command -v 7zz 2>/dev/null || true)
+  SEVEN_ZIP=""
+  if (( allow_system_lookup )); then
+    SEVEN_ZIP=$(command -v 7z 2>/dev/null || true)
+    if [[ -z "$SEVEN_ZIP" ]]; then
+      SEVEN_ZIP=$(command -v 7zz 2>/dev/null || true)
+    fi
   fi
   [[ -n "$SEVEN_ZIP" ]] && return 0
 
