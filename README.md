@@ -68,8 +68,8 @@ If you are inside an existing generated `chatgpt-linux/` folder, run `cd ..` fir
 ### Option B: clone and run
 
 ```bash
-git clone https://github.com/neomakers/ChatGPT-App-Linux.git
-cd ChatGPT-App-Linux
+git clone https://github.com/neomakers/Codex-App-Linux.git
+cd Codex-App-Linux
 chmod +x install-chatgpt-linux.sh
 ./install-chatgpt-linux.sh
 ```

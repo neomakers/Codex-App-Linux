@@ -15,6 +15,11 @@ This is the canonical procedure for taking a newer official macOS DMG into the L
 Use a clean checkout of the writable ChatGPT project. Configure the original repository as `upstream` for provenance and selective review, never as a blind merge target.
 
 ```bash
+if git remote get-url upstream >/dev/null 2>&1; then
+  git remote set-url upstream https://github.com/areu01or00/Codex-App-Linux.git
+else
+  git remote add upstream https://github.com/areu01or00/Codex-App-Linux.git
+fi
 git fetch origin --prune
 git fetch upstream --prune
 git status --short --branch
