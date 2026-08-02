@@ -20,10 +20,30 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function isPortableRelativePointer(pointer) {
+  return (
+    typeof pointer === "string" &&
+    !path.isAbsolute(pointer) &&
+    !/^(?:[\\/]|[A-Za-z]:[\\/])/.test(pointer)
+  );
+}
+
+test("release pointers reject rooted paths on every host platform", () => {
+  for (const pointer of [
+    "/releases/current.json",
+    "\\\\server\\share",
+    "C:\\releases\\current.json",
+    "C:/releases/current.json",
+  ]) {
+    assert.equal(isPortableRelativePointer(pointer), false, pointer);
+  }
+});
+
 test("current release contract is a portable, pinned ChatGPT.app-only evidence record", () => {
   const current = readJson(currentPath);
   assert.equal(typeof current.release, "string");
-  assert.ok(!path.isAbsolute(current.release), "release pointer must be relative");
+  assert.equal(current.release, "releases/26.727.40816-6067.json");
+  assert.ok(isPortableRelativePointer(current.release), "release pointer must be relative");
 
   const releasePath = path.resolve(compatibilityRoot, current.release);
   assert.ok(
