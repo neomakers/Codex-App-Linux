@@ -18,7 +18,7 @@ The writable fork remains the history source. Before importing the local rebuild
 
 The old Debian/Codex packaging files are removed from the new mainline because they target the retired Codex.app layout. Their complete contents remain recoverable from the legacy tag and Git history. The original repository is retained as an `upstream` remote for provenance and selective review, not for blind merges.
 
-After validation, publish through a pull request and merge it into `main`. Rename the writable repository to `ChatGPT-App-Linux` if GitHub permits the fork rename; GitHub's redirect preserves old clone links. The local working directory is then attached to the merged Git history without deleting its cached DMG or generated app.
+After validation, publish through a pull request and merge it into `main`. Keep the writable fork slug `neomakers/Codex-App-Linux` for this migration because it is the existing accessible repository and preserves the upstream fork relationship; product branding and the accepted payload profile are still ChatGPT Linux and ChatGPT.app-only. A later repository rename is a separate administrative change that must update and verify every clone/raw link atomically. The local working directory is then attached to the merged Git history without deleting its cached DMG or generated app.
 
 ## Repository Memory Layers
 

@@ -12,7 +12,7 @@ This is the canonical procedure for taking a newer official macOS DMG into the L
 
 ## 1. Fetch and record a baseline
 
-Use a clean checkout of the writable ChatGPT project. Configure the original repository as `upstream` for provenance and selective review, never as a blind merge target.
+Use a clean checkout of the writable fork (`neomakers/Codex-App-Linux`). Its slug preserves fork lineage; the product remains ChatGPT Linux and this mainline remains ChatGPT.app-only. Configure the original repository as `upstream` for provenance and selective review, never as a blind merge target.
 
 ```bash
 if git remote get-url upstream >/dev/null 2>&1; then

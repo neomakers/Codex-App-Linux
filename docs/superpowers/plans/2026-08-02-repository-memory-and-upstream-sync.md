@@ -91,7 +91,7 @@ Add a banner to the legacy reverse-engineering and feature-contract documents sa
 
 - [ ] **Step 3: Update repository links and ignore local agent artifacts**
 
-Point README clone/raw links at the writable ChatGPT project name, add links to the runbook and compatibility contract, and ignore `.superpowers/` while continuing to ignore DMGs and generated applications.
+Point README clone/raw links at the existing writable fork `neomakers/Codex-App-Linux`, add links to the runbook and compatibility contract, and ignore `.superpowers/` while continuing to ignore DMGs and generated applications. The repository slug preserves fork lineage; the product and mainline payload remain ChatGPT Linux and ChatGPT.app-only.
 
 - [ ] **Step 4: Review documentation and verify repository links**
 
