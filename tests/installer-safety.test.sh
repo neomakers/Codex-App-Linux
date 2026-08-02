@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_TMPDIR="$(mktemp -d)"
 TEST_FAILURES=0
 ORIGINAL_PATH="$PATH"
+ORIGINAL_NODE_BIN="$(command -v node)"
 
 cleanup() {
   local proc pid pgid caller_pgid command_line
@@ -91,15 +92,16 @@ EOF
 
 make_audit_cli_fakes() {
   local bin_dir="$1"
+  local node_bin="${2:-$ORIGINAL_NODE_BIN}"
 
   mkdir -p "$bin_dir"
-  cat >"$bin_dir/node" <<'EOF'
+  cat >"$bin_dir/node" <<EOF
 #!/usr/bin/env bash
-if [[ "${1:-}" == "--version" ]]; then
+if [[ "\${1:-}" == "--version" ]]; then
   printf 'v22.23.2\n'
   exit 0
 fi
-exec /usr/bin/node "$@"
+exec "$node_bin" "\$@"
 EOF
   cat >"$bin_dir/npm" <<'EOF'
 #!/usr/bin/env bash
@@ -403,10 +405,10 @@ for module in @parcel/watcher bufferutil utf-8-validate node-pty better-sqlite3;
   mkdir -p "$fixture/node_modules/$module"
   printf 'module.exports = true;\n' >"$fixture/node_modules/$module/index.js"
 done
-cat >"$fixture/node_modules/.bin/electron" <<'EOF'
+cat >"$fixture/node_modules/.bin/electron" <<EOF
 #!/usr/bin/env bash
-[[ "${ELECTRON_RUN_AS_NODE:-}" == "1" ]] || exit 71
-exec /usr/bin/node "$@"
+[[ "\${ELECTRON_RUN_AS_NODE:-}" == "1" ]] || exit 71
+exec "$ORIGINAL_NODE_BIN" "\$@"
 EOF
 chmod +x "$fixture/node_modules/.bin/electron"
 assert_ok validate_staging_native_modules "$fixture"
