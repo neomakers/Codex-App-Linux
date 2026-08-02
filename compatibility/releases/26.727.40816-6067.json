@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "application": {
     "profile": "chatgpt-app-only",
-    "bundleId": "com.openai.chat",
+    "bundleId": "com.openai.codex",
     "version": "26.727.40816",
     "build": "6067",
     "architecture": "x64",

@@ -33,7 +33,7 @@
 
 - [ ] **Step 1: Write the failing contract test**
 
-The test must resolve `compatibility/current.json`, reject absolute or escaping pointers, load the selected release, require `schemaVersion: 1`, `profile: "chatgpt-app-only"`, bundle ID `com.openai.chat`, exact version/build/Electron/main entry values, a 64-character lowercase DMG hash, allowed feature status and verification enums, and no `/home/`, `/Users/`, or Windows drive path anywhere in serialized JSON.
+The test must resolve `compatibility/current.json`, reject absolute or escaping pointers, load the selected release, require `schemaVersion: 1`, `profile: "chatgpt-app-only"`, preserved internal bundle ID `com.openai.codex`, exact version/build/Electron/main entry values, a 64-character lowercase DMG hash, allowed feature status and verification enums, and no `/home/`, `/Users/`, or Windows drive path anywhere in serialized JSON.
 
 ```js
 const allowedStatus = new Set(["verified", "partial", "skipped", "not-shipped", "unsupported"]);

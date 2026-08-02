@@ -34,7 +34,7 @@ test("current release contract is a portable, pinned ChatGPT.app-only evidence r
   const release = readJson(releasePath);
   assert.equal(release.schemaVersion, 1);
   assert.equal(release.application.profile, "chatgpt-app-only");
-  assert.equal(release.application.bundleId, "com.openai.chat");
+  assert.equal(release.application.bundleId, "com.openai.codex");
   assert.equal(release.application.version, "26.727.40816");
   assert.equal(release.application.build, "6067");
   assert.equal(release.application.architecture, "x64");
