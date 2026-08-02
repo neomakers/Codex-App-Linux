@@ -201,6 +201,11 @@ EOF
 # shellcheck source=../lib/chatgpt-installer.sh
 source "$ROOT_DIR/lib/chatgpt-installer.sh"
 
+# Break caught: a 20-second default rejects valid first launches whose isolated
+# state initialization reaches the renderer just after the old deadline.
+assert_eq 40 "$GUI_SMOKE_SECONDS_DEFAULT"
+assert_eq 90 "$GUI_SMOKE_SECONDS_MAX"
+
 # Break caught: normal installation stops loading compatibility/current.json.
 assert_ok load_current_release_contract "$ROOT_DIR/compatibility" "$(command -v node)"
 assert_eq chatgpt-app-only "$RELEASE_APPLICATION_PROFILE"
