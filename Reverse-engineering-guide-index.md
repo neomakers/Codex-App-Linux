@@ -1,8 +1,10 @@
 # Reverse Engineering Guide Index
 
+> **Historical evidence — not current instructions.** The observed `Codex.app` release, filenames, paths, and `main` status below are preserved for forensic comparison. For the current ChatGPT.app-only workflow and release truth, use [UPGRADING.md](UPGRADING.md) and [compatibility/current.json](compatibility/current.json).
+
 Date: 2026-05-25
 
-This index is the canonical map for feature porting. `Reverse-engineering-guide.md` explains the base DMG-to-Linux conversion. The feature contracts below explain individual Codex app surfaces, what the macOS app actually does, what Linux must replace, and what must be tested before a port is called complete.
+This index preserves the former feature-porting map. `Reverse-engineering-guide.md` explains the historical base DMG-to-Linux conversion. The feature contracts below retain evidence about individual Codex app surfaces, what the macOS app did, and the Linux replacements that were investigated.
 
 ## Rule For This Repo
 

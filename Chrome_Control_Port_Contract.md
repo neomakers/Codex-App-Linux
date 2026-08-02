@@ -1,5 +1,7 @@
 # Chrome Control Port Contract
 
+> **Historical evidence — not current instructions.** The observed `Codex.app` release, filenames, paths, and `main` status below are preserved for forensic comparison. For the current ChatGPT.app-only workflow and release truth, use [UPGRADING.md](UPGRADING.md) and [compatibility/current.json](compatibility/current.json).
+
 Date: 2026-05-24
 
 Last forensic update: 2026-05-25
