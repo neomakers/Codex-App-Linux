@@ -204,41 +204,11 @@ function patchMobilePairingUi() {
 
 function patchLinuxRemoteControlBridge() {
   const mainProcess = findBuildAsset(/^main-.*\.js$/);
-  const linuxRemoteControlHostConfig = "(()=>{let __s=e=>{let t=e.split(/\\r?\\n/),n=[],r=!1,i=!1,a=!1;for(let e of t){if(/^\\s*\\[.*\\]\\s*$/.test(e)){r&&!a&&(n.push(`remote_control = true`),a=!0),r=/^\\s*\\[features\\]\\s*$/.test(e),i=i||r,n.push(e);continue}if(/^\\s*remote_control\\s*=/.test(e)){r&&!a&&(n.push(`remote_control = true`),a=!0);continue}n.push(e)}return r&&!a&&n.push(`remote_control = true`),i||n.unshift(`[features]`,`remote_control = true`,``),n.join(`\\n`).replace(/\\n*$/,`\\n`)};try{let e=process.getBuiltinModule(`fs`),t=process.getBuiltinModule(`path`),n=process.getBuiltinModule(`os`),r=process.env.CODEX_HOME||t.join(n.homedir(),`.codex`),i=t.join(r,`config.toml`);e.mkdirSync(r,{recursive:!0});let a=e.existsSync(i)?e.readFileSync(i,`utf8`):``;e.writeFileSync(i,__s(a))}catch(e){console.error(`Failed to enable Linux remote_control host config`,e)}})()";
-
-  const linuxDeviceKeyProvider = String.raw`function wV({resourcesPath:e}){if(process.platform===` + "`linux`" + String.raw`){let e=require(` + "`crypto`" + String.raw`),t=require(` + "`fs`" + String.raw`),n=require(` + "`path`" + String.raw`),r=require(` + "`os`" + String.raw`),i=n.join(process.env.CODEX_LINUX_REMOTE_CONTROL_KEY_DIR||n.join(r.homedir(),` + "`.config`" + String.raw`,` + "`chatgpt-linux`" + String.raw`),` + "`remote-control-device-keys.json`" + String.raw`),a=()=>{try{return JSON.parse(t.readFileSync(i,` + "`utf8`" + String.raw`))}catch{return{keys:{}}}},o=e=>{t.mkdirSync(n.dirname(i),{recursive:!0}),t.writeFileSync(i,JSON.stringify(e,null,2)+` + "`\\n`" + String.raw`,{mode:384})},s=t=>e.createHash(` + "`sha256`" + String.raw`).update(t).digest(` + "`base64url`" + String.raw`),c=t=>Buffer.from(JSON.stringify({domain:SV,payload:EV(t)}),` + "`utf8`" + String.raw`),l=t=>{let n=a(),r=n.keys[t];if(!r)throw Error(` + "`Linux remote-control device key not found: ${t}`" + String.raw`);return r};return{createDeviceKey:async t=>{let r=e.generateKeyPairSync(` + "`ec`" + String.raw`,{namedCurve:` + "`prime256v1`" + String.raw`}),u=r.publicKey.export({type:` + "`spki`" + String.raw`,format:` + "`der`" + String.raw`}).toString(` + "`base64`" + String.raw`),d=` + "`linux-${Date.now().toString(36)}-${s(u).slice(0,16)}`" + String.raw`,f={algorithm:` + "`ecdsa_p256_sha256`" + String.raw`,keyId:d,protectionClass:` + "`os_protected_nonextractable`" + String.raw`,publicKeySpkiDerBase64:u,privateKeyPem:r.privateKey.export({type:` + "`pkcs8`" + String.raw`,format:` + "`pem`" + String.raw`})},p=a();return p.keys[d]=f,o(p),{algorithm:f.algorithm,keyId:f.keyId,protectionClass:f.protectionClass,publicKeySpkiDerBase64:f.publicKeySpkiDerBase64}},deleteDeviceKey:async e=>{let t=a();delete t.keys[e],o(t)},getDeviceKeyPublic:async e=>{let t=l(e);return{algorithm:t.algorithm,keyId:t.keyId,protectionClass:t.protectionClass,publicKeySpkiDerBase64:t.publicKeySpkiDerBase64}},signDeviceKey:async(t,n)=>{let r=l(t),i=c(n),a=e.createSign(` + "`SHA256`" + String.raw`);a.update(i),a.end();let o=a.sign(r.privateKeyPem);return{algorithm:r.algorithm,signatureDerBase64:o.toString(` + "`base64`" + String.raw`),signedPayloadBase64:i.toString(` + "`base64`" + String.raw`)}}}}let t=null,n=()=>{if(process.platform!==` + "`darwin`" + String.raw`)throw Error(` + "`Remote control device keys are only available on macOS`" + String.raw`);if(e==null)throw Error(` + "`Remote control device keys require resourcesPath`" + String.raw`);return t??=bV((0,i.join)(e,` + "`native`" + String.raw`,xV)),t};return{createDeviceKey:e=>n().createDeviceKey(e??` + "`hardware_only`" + String.raw`),deleteDeviceKey:e=>n().deleteDeviceKey(e),getDeviceKeyPublic:e=>n().getDeviceKeyPublic(e),signDeviceKey:async(e,t)=>{let r=TV(t);return{...await n().signDeviceKey(e,r),signedPayloadBase64:r.toString(` + "`base64`" + String.raw`)}}}}`;
-
-  replaceRegexOptional(
-    mainProcess,
-    /function wV\(\{resourcesPath:e\}\)\{let t=null,n=\(\)=>\{if\(process\.platform!==`darwin`\)throw Error\(`Remote control device keys are only available on macOS`\);if\(e==null\)throw Error\(`Remote control device keys require resourcesPath`\);return t\?\?=bV\(\(0,i\.join\)\(e,`native`,xV\)\),t\};return\{createDeviceKey:e=>n\(\)\.createDeviceKey\(e\?\?`hardware_only`\),deleteDeviceKey:e=>n\(\)\.deleteDeviceKey\(e\),getDeviceKeyPublic:e=>n\(\)\.getDeviceKeyPublic\(e\),signDeviceKey:async\(e,t\)=>\{let r=TV\(t\);return\{\.\.\.await n\(\)\.signDeviceKey\(e,r\),signedPayloadBase64:r\.toString\(`base64`\)\}\}\}\}/,
-    linuxDeviceKeyProvider,
-    "Linux remote-control device-key provider",
-  );
-
-  replaceOptional(
-    mainProcess,
-    "async function mV({codexHome:e,hostConfig:n,logger:r=t.Jr()}){if(n.kind===`local`)try{",
-    "async function mV({codexHome:e,hostConfig:n,logger:r=t.Jr()}){if(process.platform===`linux`)return;if(n.kind===`local`)try{",
-    "Do not strip remote_control config on Linux",
-  );
-
-  replaceOptional(
-    mainProcess,
-    "\"set-local-app-server-feature-enablement\":async({enabled:e,featureName:n})=>{let r=t.et({enabled:e,featureName:n});return this.sharedObjectRepository?.set(`local_app_server_feature_enablement`,r),{enablement:r}}",
-    "\"set-local-app-server-feature-enablement\":async({enabled:e,featureName:n})=>{let r=t.et({enabled:e,featureName:n});process.platform===`linux`&&n===`remote_control`&&e&&" + linuxRemoteControlHostConfig + ";return this.sharedObjectRepository?.set(`local_app_server_feature_enablement`,r),{enablement:r}}",
-    "Persist Linux remote_control host config on feature toggle",
-  );
-
-  replaceOptional(
-    mainProcess,
-    "this.sharedObjectRepository.set(`local_app_server_feature_enablement`,t.$());let n=this.createAppServerConnection(this.hostId);",
-    "process.platform===`linux`&&(" + linuxRemoteControlHostConfig + "),this.sharedObjectRepository.set(`local_app_server_feature_enablement`,t.$());let n=this.createAppServerConnection(this.hostId);",
-    "Enable Linux remote_control host config before local app-server startup",
-  );
+  record("Linux remote-control device-key provider", "skipped", mainProcess);
 
   feature("mobilePairingBridge", "partial", {
-    evidence: "Linux remote_control config persistence is patched; Linux device-key provider patch attempted.",
-    caveat: "End-to-end server acceptance and account behavior still require the final runtime batch test.",
+    evidence: "The launcher can explicitly opt in to the CLI remote-control daemon, but no Linux device-key provider is patched.",
+    caveat: "A protected nonextractable Linux device-key provider is unsupported, so end-to-end mobile pairing remains partial.",
   });
 }
 

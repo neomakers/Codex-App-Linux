@@ -16,6 +16,10 @@ INSTALLER_VERSION="2026.08.01-chatgpt-app"
 DMG_PATH=""
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 SKIP_CLI_INSTALL=0
+SKIP_GUI_SMOKE=0
+AUDIT_CANDIDATE=0
+AUDIT_OUTPUT=""
+AUDIT_SOURCE_URL=""
 WORK_DIR=""
 STAGING_DIR=""
 PREVIOUS_DIR=""
@@ -47,10 +51,15 @@ Usage:
   ./install-chatgpt-linux.sh [options]
 
 Options:
-  --dmg <path>       Use an existing ChatGPT DMG
-  --output <path>    Install output directory (default: $DEFAULT_OUTPUT_DIR)
-  --skip-cli-install Do not attempt Codex CLI discovery/update
-  -h, --help         Show this help
+  --dmg <path>          Use an existing ChatGPT DMG
+  --output <path>       Install output directory (default: $DEFAULT_OUTPUT_DIR)
+  --skip-cli-install    Do not attempt Codex CLI discovery/update
+  --skip-gui-smoke      Skip the pre-promotion GUI smoke (expert/headless use)
+  --audit-candidate     Audit a future candidate without installing it
+  --audit-output <path> Write candidate evidence here (default: temporary)
+  --audit-source-url <url>
+                         Record the source URL for a local audit DMG
+  -h, --help            Show this help
 USAGE
 }
 
@@ -70,6 +79,24 @@ while (( $# > 0 )); do
       SKIP_CLI_INSTALL=1
       shift
       ;;
+    --skip-gui-smoke)
+      SKIP_GUI_SMOKE=1
+      shift
+      ;;
+    --audit-candidate)
+      AUDIT_CANDIDATE=1
+      shift
+      ;;
+    --audit-output)
+      [[ $# -ge 2 && -n "$2" ]] || die "--audit-output requires a path"
+      AUDIT_OUTPUT="$2"
+      shift 2
+      ;;
+    --audit-source-url)
+      [[ $# -ge 2 && -n "$2" ]] || die "--audit-source-url requires a URL"
+      AUDIT_SOURCE_URL="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -80,21 +107,51 @@ while (( $# > 0 )); do
   esac
 done
 
-case "$OUTPUT_DIR" in
-  /*) ;;
-  *) OUTPUT_DIR="$SCRIPT_DIR/$OUTPUT_DIR" ;;
-esac
-output_name="$(basename -- "$OUTPUT_DIR")"
-[[ "$output_name" != "." && "$output_name" != ".." ]] ||
-  die "unsafe output path: $OUTPUT_DIR"
-output_parent="$(dirname -- "$OUTPUT_DIR")"
-mkdir -p "$output_parent" || die "cannot create output parent: $output_parent"
-OUTPUT_DIR="$(cd "$output_parent" && pwd -P)/$output_name"
-[[ "$OUTPUT_DIR" != "/" && "$OUTPUT_DIR" != "$SCRIPT_DIR" ]] ||
-  die "refusing unsafe output directory: $OUTPUT_DIR"
+if (( AUDIT_CANDIDATE )); then
+  (( SKIP_GUI_SMOKE == 0 )) ||
+    die "--skip-gui-smoke is not applicable to --audit-candidate"
+  if [[ -n "$DMG_PATH" && -z "$AUDIT_SOURCE_URL" ]]; then
+    die "--audit-source-url is required with --audit-candidate --dmg"
+  fi
+  if [[ -n "$AUDIT_SOURCE_URL" ]]; then
+    case "$AUDIT_SOURCE_URL" in
+      http://*|https://*) ;;
+      *) die "--audit-source-url must be an HTTP(S) URL" ;;
+    esac
+  fi
+  if [[ -z "$AUDIT_OUTPUT" ]]; then
+    AUDIT_OUTPUT="$(mktemp -d /tmp/chatgpt-linux-audit-XXXXXX)"
+  else
+    case "$AUDIT_OUTPUT" in
+      /*) ;;
+      *) AUDIT_OUTPUT="$SCRIPT_DIR/$AUDIT_OUTPUT" ;;
+    esac
+    mkdir -p "$AUDIT_OUTPUT" || die "cannot create audit output: $AUDIT_OUTPUT"
+    AUDIT_OUTPUT="$(cd "$AUDIT_OUTPUT" && pwd -P)"
+  fi
+else
+  [[ -z "$AUDIT_OUTPUT" ]] ||
+    die "--audit-output requires --audit-candidate"
+  [[ -z "$AUDIT_SOURCE_URL" ]] ||
+    die "--audit-source-url requires --audit-candidate"
+  case "$OUTPUT_DIR" in
+    /*) ;;
+    *) OUTPUT_DIR="$SCRIPT_DIR/$OUTPUT_DIR" ;;
+  esac
+  output_name="$(basename -- "$OUTPUT_DIR")"
+  [[ "$output_name" != "." && "$output_name" != ".." ]] ||
+    die "unsafe output path: $OUTPUT_DIR"
+  output_parent="$(dirname -- "$OUTPUT_DIR")"
+  mkdir -p "$output_parent" || die "cannot create output parent: $output_parent"
+  OUTPUT_DIR="$(cd "$output_parent" && pwd -P)/$output_name"
+  [[ "$OUTPUT_DIR" != "/" && "$OUTPUT_DIR" != "$SCRIPT_DIR" ]] ||
+    die "refusing unsafe output directory: $OUTPUT_DIR"
+fi
 
 WORK_DIR="$(mktemp -d /tmp/chatgpt-linux-install-XXXXXX)"
-STAGING_DIR="${OUTPUT_DIR}.staging.$$"
+if (( AUDIT_CANDIDATE == 0 )); then
+  STAGING_DIR="${OUTPUT_DIR}.staging.$$"
+fi
 TOOLCHAIN_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/chatgpt-linux/toolchain"
 mkdir -p "$TOOLCHAIN_DIR" ||
   die "cannot create non-root toolchain cache: $TOOLCHAIN_DIR"
@@ -144,48 +201,74 @@ resolve_7zip "$TOOLCHAIN_DIR" || die "unable to resolve 7-Zip"
 success "7-Zip: $SEVEN_ZIP"
 
 EXPECTED_DMG_BYTES=""
-using_default_dmg=0
-if [[ -n "$DMG_PATH" ]]; then
-  [[ -f "$DMG_PATH" ]] || die "DMG not found: $DMG_PATH"
-else
-  DMG_PATH="$DEFAULT_DMG_PATH"
-  using_default_dmg=1
-
-  if command -v curl >/dev/null 2>&1; then
-    EXPECTED_DMG_BYTES="$(remote_content_length "$DEFAULT_DMG_URL" 2>/dev/null || true)"
-  fi
-
-  needs_download=0
-  if [[ ! -f "$DMG_PATH" ]]; then
-    needs_download=1
-  elif cached_dmg_is_usable "$DMG_PATH" "$EXPECTED_DMG_BYTES" \
-       >"$WORK_DIR/cached-dmg-test.log" 2>&1; then
-    cached_bytes=$(stat -c%s "$DMG_PATH")
-    if [[ -n "$EXPECTED_DMG_BYTES" &&
-          "$cached_bytes" != "$EXPECTED_DMG_BYTES" ]]; then
-      warn "server DMG changed size; using the existing complete cached release"
-      EXPECTED_DMG_BYTES=""
-    fi
+DMG_SOURCE_URL="$DEFAULT_DMG_URL"
+if (( AUDIT_CANDIDATE )); then
+  if [[ -n "$DMG_PATH" ]]; then
+    [[ -f "$DMG_PATH" ]] || die "DMG not found: $DMG_PATH"
+    DMG_SOURCE_URL="$AUDIT_SOURCE_URL"
   else
-    needs_download=1
+    DMG_PATH="$AUDIT_OUTPUT/candidate.dmg"
+    if [[ -f "$DMG_PATH" ]]; then
+      mv -- "$DMG_PATH" "$WORK_DIR/existing-audit-candidate.dmg"
+      warn "preserved the prior audit candidate; mutable candidate downloads are not resumed"
+    fi
+    if command -v curl >/dev/null 2>&1; then
+      EXPECTED_DMG_BYTES="$(remote_content_length "$DEFAULT_DMG_URL" 2>/dev/null || true)"
+    fi
+    log "Downloading the audit candidate with bounded retries"
+    download_resumable \
+      "$DEFAULT_DMG_URL" "$DMG_PATH" "$EXPECTED_DMG_BYTES" ||
+      die "failed to download the audit candidate"
+  fi
+else
+  log "Loading the repository's current release contract"
+  load_current_release_contract "$SCRIPT_DIR/compatibility" "$NODE_BIN" ||
+    die "unable to load the current release contract"
+  success "Selected release contract: compatibility/${RELEASE_CONTRACT_PATH#"$SCRIPT_DIR/compatibility/"}"
+  DEFAULT_DMG_URL="$RELEASE_DMG_URL"
+  DMG_SOURCE_URL="$RELEASE_DMG_URL"
+  EXPECTED_DMG_BYTES="$RELEASE_DMG_BYTES"
+
+  if [[ -n "$DMG_PATH" ]]; then
+    [[ -f "$DMG_PATH" ]] || die "DMG not found: $DMG_PATH"
+  else
+    DMG_PATH="$DEFAULT_DMG_PATH"
+    if verify_file_identity \
+      "$DMG_PATH" "$RELEASE_DMG_BYTES" "$RELEASE_DMG_SHA256" \
+      >"$WORK_DIR/cached-dmg-identity.log" 2>&1; then
+      success "Using the cached DMG verified for the selected release contract"
+    else
+      resume_compatible=0
+      if command -v curl >/dev/null 2>&1; then
+        remote_contract_bytes="$(require_remote_size_matches_contract \
+          "$RELEASE_DMG_URL" "$RELEASE_DMG_BYTES")" ||
+          die "the mutable remote endpoint no longer serves the selected release; supply its verified cached DMG with --dmg"
+        [[ "$remote_contract_bytes" == "$RELEASE_DMG_BYTES" ]] &&
+          resume_compatible=1
+      fi
+      if [[ -f "$DMG_PATH" ]]; then
+        cached_bytes=$(stat -c%s "$DMG_PATH")
+        if (( resume_compatible == 0 || cached_bytes >= RELEASE_DMG_BYTES )); then
+          mv -- "$DMG_PATH" "$WORK_DIR/invalid-cached.dmg"
+          warn "preserved an identity-incompatible cache before a fresh download"
+        fi
+      fi
+      log "Downloading or resuming the selected release DMG with bounded retries"
+      download_resumable \
+        "$RELEASE_DMG_URL" "$DMG_PATH" "$RELEASE_DMG_BYTES" ||
+        die "failed to download the selected release DMG"
+    fi
   fi
 
-  if (( needs_download )); then
-    if [[ -f "$DMG_PATH" && -n "$EXPECTED_DMG_BYTES" ]] &&
-       (( $(stat -c%s "$DMG_PATH") >= EXPECTED_DMG_BYTES )); then
-      mv -- "$DMG_PATH" "$WORK_DIR/invalid-cached.dmg"
-      warn "discarding an invalid full-size DMG cache before a fresh download"
-    fi
-    log "Downloading or resuming the current ChatGPT DMG"
-    download_resumable "$DEFAULT_DMG_URL" "$DMG_PATH" ||
-      die "failed to download a complete ChatGPT DMG"
-  fi
+  verify_file_identity \
+    "$DMG_PATH" "$RELEASE_DMG_BYTES" "$RELEASE_DMG_SHA256" ||
+    die "DMG does not match the current release contract"
 fi
 
 DMG_PATH="$(cd "$(dirname "$DMG_PATH")" && pwd -P)/$(basename "$DMG_PATH")"
 success "Using DMG: $DMG_PATH"
 
-log "Validating DMG integrity"
+log "Validating DMG archive integrity"
 if ! validate_dmg "$DMG_PATH" "$EXPECTED_DMG_BYTES" \
   >"$WORK_DIR/7zip-test.log" 2>&1; then
   tail -n 40 "$WORK_DIR/7zip-test.log" >&2 || true
@@ -193,10 +276,8 @@ if ! validate_dmg "$DMG_PATH" "$EXPECTED_DMG_BYTES" \
 fi
 success "DMG integrity verified"
 
-DMG_SHA256="unknown"
-if command -v sha256sum >/dev/null 2>&1; then
-  DMG_SHA256="$(sha256sum "$DMG_PATH" | awk '{print $1}')"
-fi
+DMG_BYTES="$(stat -c%s "$DMG_PATH")"
+DMG_SHA256="$(sha256sum "$DMG_PATH" | awk '{print $1}')"
 
 EXTRACTED_DIR="$WORK_DIR/extracted"
 mkdir -p "$EXTRACTED_DIR"
@@ -233,10 +314,41 @@ log "Extracting app.asar with @electron/asar 4.2.1"
 cp -a "$CHATGPT_ASAR_UNPACKED/." "$APP_SOURCE/" ||
   die "failed to merge app.asar.unpacked"
 
-[[ -d "$APP_SOURCE/.vite" ]] || die "extracted app is missing .vite"
-[[ -d "$APP_SOURCE/webview" ]] || die "extracted app is missing webview"
 [[ -f "$APP_SOURCE/package.json" ]] ||
   die "extracted app is missing package.json"
+
+APP_BUNDLE_ID="$(plist_value "$CHATGPT_PLIST" CFBundleIdentifier)"
+APP_ARCHITECTURE="$(normalize_linux_arch)" ||
+  die "unsupported candidate architecture"
+APP_MAIN_ENTRY="$("$NODE_BIN" -e \
+  'const p=require(process.argv[1]); process.stdout.write(p.main || "")' \
+  "$APP_SOURCE/package.json")"
+ELECTRON_RUNTIME_VERSION="$("$NODE_BIN" -e \
+  'const p=require(process.argv[1]); process.stdout.write(p.devDependencies?.electron || "")' \
+  "$APP_SOURCE/package.json")"
+[[ -n "$APP_MAIN_ENTRY" ]] || die "candidate package is missing its main entry"
+[[ -n "$ELECTRON_RUNTIME_VERSION" ]] ||
+  die "candidate package is missing its Electron version"
+
+if (( AUDIT_CANDIDATE )); then
+  write_candidate_audit_evidence \
+    "$AUDIT_OUTPUT" "$APP_VERSION" "$APP_BUILD" "$APP_BUNDLE_ID" \
+    "$APP_ARCHITECTURE" "$ELECTRON_RUNTIME_VERSION" "$APP_MAIN_ENTRY" \
+    "$DMG_BYTES" "$DMG_SHA256" "$DMG_SOURCE_URL" ||
+    die "failed to write candidate audit evidence"
+  success "Candidate audit complete; no installation or output promotion occurred"
+  printf '\nCandidate evidence: %s/candidate-evidence.json\n' "$AUDIT_OUTPUT"
+  printf 'Candidate DMG:      %s\n\n' "$DMG_PATH"
+  exit 0
+fi
+
+validate_contract_payload \
+  "$APP_ARCHITECTURE" "$ELECTRON_RUNTIME_VERSION" "$APP_MAIN_ENTRY" ||
+  die "ChatGPT.app does not match the current release contract"
+success "Extracted application metadata and required paths match the release contract"
+
+[[ -d "$APP_SOURCE/.vite" ]] || die "extracted app is missing .vite"
+[[ -d "$APP_SOURCE/webview" ]] || die "extracted app is missing webview"
 
 GENERATED_PACKAGE="$WORK_DIR/package.generated.json"
 "$NODE_BIN" "$SCRIPT_DIR/tools/generate-chatgpt-package.mjs" \
@@ -329,7 +441,7 @@ cat >"$STAGING_DIR/node_modules/electron-liquid-glass/package.json" <<'STUBPKG'
 {"name":"electron-liquid-glass","version":"1.0.0","main":"index.js"}
 STUBPKG
 
-write_chatgpt_launcher "$STAGING_DIR" ||
+write_chatgpt_launcher "$STAGING_DIR" "$NODE_BIN" "$NPM_BIN" ||
   die "launcher generation failed"
 
 if command -v codex >/dev/null 2>&1; then
@@ -338,19 +450,21 @@ if command -v codex >/dev/null 2>&1; then
   success "Codex CLI: $CLI_PATH_USED ($CLI_VERSION_USED)"
 elif (( SKIP_CLI_INSTALL )); then
   CLI_PATH_USED="$STAGING_DIR/bin/codex-fallback"
-  CLI_VERSION_USED="npx @openai/codex@latest (fallback)"
-  warn "Codex CLI discovery skipped; launcher will use its npx fallback"
+  CLI_VERSION_USED="npm exec @openai/codex@latest (fallback)"
+  warn "Codex CLI discovery skipped; launcher will use its recorded-runtime fallback"
 else
   CLI_PATH_USED="$STAGING_DIR/bin/codex-fallback"
-  CLI_VERSION_USED="npx @openai/codex@latest (fallback)"
-  warn "Codex CLI not found; launcher will use its non-root npx fallback"
+  CLI_VERSION_USED="npm exec @openai/codex@latest (fallback)"
+  warn "Codex CLI not found; launcher will use its recorded-runtime fallback"
 fi
 
 "$NODE_BIN" - "$STAGING_DIR/build-info.json" \
   "$INSTALLER_VERSION" "$APP_VERSION" "$APP_BUILD" \
   "$ELECTRON_RUNTIME_VERSION" "$APP_MAIN_ENTRY" \
-  "$DMG_PATH" "$DMG_SHA256" "$NODE_BIN" "$NODE_VERSION" \
-  "$CLI_PATH_USED" "$CLI_VERSION_USED" <<'NODE'
+  "$DMG_PATH" "$DMG_SHA256" "$DMG_BYTES" \
+  "$NODE_BIN" "$NPM_BIN" "$NODE_VERSION" \
+  "$CLI_PATH_USED" "$CLI_VERSION_USED" \
+  "compatibility/${RELEASE_CONTRACT_PATH#"$SCRIPT_DIR/compatibility/"}" <<'NODE'
 const fs = require("fs");
 const [
   outputPath,
@@ -361,10 +475,13 @@ const [
   mainEntry,
   dmgPath,
   dmgSha256,
+  dmgBytes,
   nodePath,
+  npmPath,
   nodeVersion,
   cliPath,
   cliVersion,
+  releaseContract,
 ] = process.argv.slice(2);
 
 const payload = {
@@ -376,10 +493,13 @@ const payload = {
   mainEntry,
   dmgPath,
   dmgSha256,
+  dmgBytes: Number(dmgBytes),
   nodePath,
+  npmPath,
   nodeVersion,
   cliPath,
   cliVersion,
+  releaseContract,
 };
 fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2) + "\n");
 NODE
@@ -390,25 +510,27 @@ if [[ -e "$OUTPUT_DIR" ]]; then
         ! -f "$OUTPUT_DIR/$CHATGPT_LAUNCHER_NAME" ]]; then
     die "refusing to replace a directory not recognized as generated ChatGPT Linux output: $OUTPUT_DIR"
   fi
-  PREVIOUS_DIR="${OUTPUT_DIR}.previous.$$"
-  [[ ! -e "$PREVIOUS_DIR" ]] ||
-    die "backup path already exists: $PREVIOUS_DIR"
-  mv -- "$OUTPUT_DIR" "$PREVIOUS_DIR" ||
-    die "failed to preserve the existing generated output"
 fi
 
-if ! mv -- "$STAGING_DIR" "$OUTPUT_DIR"; then
-  if [[ -n "$PREVIOUS_DIR" && -e "$PREVIOUS_DIR" ]]; then
-    mv -- "$PREVIOUS_DIR" "$OUTPUT_DIR" || true
-    PREVIOUS_DIR=""
-  fi
-  die "failed to finalize staged output"
+log "Validating staging native modules with the Electron ABI"
+if (( SKIP_GUI_SMOKE )); then
+  warn "GUI smoke will be skipped by explicit expert request"
+else
+  log "Running bounded GUI smoke from staging with remote control disabled"
 fi
+validate_and_promote_staging \
+  "$STAGING_DIR" "$OUTPUT_DIR" "$SKIP_GUI_SMOKE" "$WORK_DIR/gui-smoke.log" || {
+  tail -n 80 "$WORK_DIR/gui-smoke.log" >&2 2>/dev/null || true
+  die "staging validation or promotion failed; current output was not replaced"
+}
 STAGING_DIR=""
-
+if (( SKIP_GUI_SMOKE )); then
+  success "Staging native validation passed before promotion; GUI smoke was skipped"
+else
+  success "Staging native/GUI validation passed before promotion"
+fi
 if [[ -n "$PREVIOUS_DIR" && -e "$PREVIOUS_DIR" ]]; then
-  rm -rf -- "$PREVIOUS_DIR"
-  PREVIOUS_DIR=""
+  success "Previous output preserved for rollback: $PREVIOUS_DIR"
 fi
 
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"

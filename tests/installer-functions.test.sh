@@ -374,7 +374,7 @@ mkdir -p "$fixture"
 make_fake_http_tools "$fixture/http-bin" 120 100
 PATH="$fixture/http-bin:$ORIGINAL_PATH"
 assert_eq 120 "$(remote_content_length https://example.invalid/ChatGPT.dmg)"
-assert_fail_with "incomplete DMG: expected 120 bytes, found 100" \
+assert_fail_with "download remained incomplete after 3 attempts: expected 120 bytes, found 100" \
   download_resumable https://example.invalid/ChatGPT.dmg "$fixture/wget-partial.dmg"
 
 make_fake_http_tools "$fixture/http-complete-bin" 120 120
@@ -448,7 +448,8 @@ PATH="$ORIGINAL_PATH"
 
 fixture="$TEST_TMPDIR/launcher"
 mkdir -p "$fixture/chatgpt-linux"
-assert_ok write_chatgpt_launcher "$fixture/chatgpt-linux"
+assert_ok write_chatgpt_launcher \
+  "$fixture/chatgpt-linux" "$NODE_BIN" "$NPM_BIN"
 assert_file "$fixture/chatgpt-linux/chatgpt-linux.sh"
 assert_executable "$fixture/chatgpt-linux/chatgpt-linux.sh"
 assert_file_contains "$fixture/chatgpt-linux/chatgpt-linux.sh" \
@@ -471,8 +472,14 @@ assert_command_contains "ChatGPT Linux Installer" \
   "$ROOT_DIR/install-chatgpt-linux.sh" --help
 assert_command_contains "--dmg <path>" \
   "$ROOT_DIR/install-chatgpt-linux.sh" --help
+assert_command_contains "--audit-source-url <url>" \
+  "$ROOT_DIR/install-chatgpt-linux.sh" --help
 assert_command_fails_with "Unknown option: --unknown" \
   "$ROOT_DIR/install-chatgpt-linux.sh" --unknown
+: >"$TEST_TMPDIR/not-url.dmg"
+assert_command_fails_with "--audit-source-url must be an HTTP(S) URL" \
+  "$ROOT_DIR/install-chatgpt-linux.sh" --audit-candidate \
+  --dmg "$TEST_TMPDIR/not-url.dmg" --audit-source-url not-a-url
 assert_file_not_exists "$ROOT_DIR/install-codex-linux.sh"
 
 retry_attempts=0

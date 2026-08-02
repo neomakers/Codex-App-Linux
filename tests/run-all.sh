@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 bash -n install-chatgpt-linux.sh lib/chatgpt-installer.sh tests/*.sh
 bash tests/installer-functions.test.sh
+bash tests/installer-safety.test.sh
 node --test tests/*.test.mjs
 
 if rg -n 'install-codex-linux\.sh|codex-linux/|codex-linux\.desktop' \

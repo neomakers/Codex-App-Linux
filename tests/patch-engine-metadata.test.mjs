@@ -14,8 +14,6 @@ test("exposes ChatGPT Linux patch-engine metadata while retaining internal Codex
   assert.match(source, /patchEngine: "tools\/patch-chatgpt-linux\.mjs"/);
   assert.match(source, /chatgpt-linux-feature-manifest\.json/);
   assert.doesNotMatch(source, /codex-linux-feature-manifest\.json/);
-  assert.match(source, /\.config.*chatgpt-linux/);
-
   assert.match(source, /CODEX_BROWSER_USE_PIPE_DIR/);
   assert.match(source, /Codex Mobile/);
   assert.match(source, /codex-browser-use/);
@@ -74,7 +72,10 @@ test("generates only release-contract feature statuses from a patched fixture", 
   ]) {
     fs.writeFileSync(path.join(assetsDir, asset), "");
   }
-  fs.writeFileSync(path.join(buildDir, "main-fixture.js"), "");
+  fs.writeFileSync(
+    path.join(buildDir, "main-fixture.js"),
+    "function wV({resourcesPath:e}){let t=null,n=()=>{if(process.platform!==`darwin`)throw Error(`Remote control device keys are only available on macOS`);if(e==null)throw Error(`Remote control device keys require resourcesPath`);return t??=bV((0,i.join)(e,`native`,xV)),t};return{createDeviceKey:e=>n().createDeviceKey(e??`hardware_only`),deleteDeviceKey:e=>n().deleteDeviceKey(e),getDeviceKeyPublic:e=>n().getDeviceKeyPublic(e),signDeviceKey:async(e,t)=>{let r=TV(t);return{...await n().signDeviceKey(e,r),signedPayloadBase64:r.toString(`base64`)}}}}",
+  );
   fs.writeFileSync(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "{}");
   for (const script of [
     "check-native-host-manifest.js",
@@ -94,7 +95,17 @@ test("generates only release-contract feature statuses from a patched fixture", 
     fs.readFileSync(path.join(fixtureRoot, "chatgpt-linux-feature-manifest.json"), "utf8"),
   );
   assert.equal(manifest.features.mobilePairingUi.status, "partial");
+  assert.equal(manifest.features.mobilePairingBridge.status, "partial");
   assert.equal(manifest.features.chromeControl.status, "partial");
+  assert.equal(
+    manifest.patches.find(({ name }) => name === "Linux remote-control device-key provider")
+      ?.status,
+    "skipped",
+  );
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(buildDir, "main-fixture.js"), "utf8"),
+    /os_protected_nonextractable|privateKeyPem|pkcs8/i,
+  );
   for (const value of Object.values(manifest.features)) {
     assert.ok(["verified", "partial", "skipped", "not-shipped", "unsupported"].includes(value.status));
   }

@@ -83,7 +83,9 @@ Expected: all tests pass.
 
 - [ ] **Step 1: Write the policy and runbook**
 
-Keep `AGENTS.md` short and normative. Put the full fetch → evidence → audit → TDD → ABI rebuild → staged install → GUI smoke → release contract → branch/PR sequence in `UPGRADING.md`, including cache identity rules and the separate-profile requirement for any future Codex.app fallback.
+Keep `AGENTS.md` short and normative. Put the full fetch → evidence → non-installing candidate audit → TDD → ABI rebuild in staging → Electron-native-module validation → bounded staging GUI smoke → rollback-safe promotion → release contract → branch/PR sequence in `UPGRADING.md`, including cache identity rules and the separate-profile requirement for any future Codex.app fallback.
+
+Normal installation must load `compatibility/current.json`, enforce its exact DMG size/SHA-256 and application metadata/required paths, and reject a changed remote size before download. Unknown releases use `--audit-candidate` and cannot promote output. Remote control defaults off, the software device-key provider remains unsupported/skipped, the launcher records its persistent Node/npm runtime, downloads have bounded attempts, and desktop registration follows successful promotion only.
 
 - [ ] **Step 2: Mark old contracts as historical evidence**
 

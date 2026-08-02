@@ -17,7 +17,7 @@
 - The current app-declared Electron runtime, 42.3.0, is preserved.
 - Installation must not invoke `sudo`.
 - `app.asar` and adjacent `app.asar.unpacked` are treated as one payload.
-- Existing installed output is not replaced until the staging build succeeds.
+- Existing installed output is not replaced until staging passes Electron-native-module and bounded GUI validation.
 - This workspace has no `.git` metadata, so commit steps are recorded as unavailable rather than simulated.
 
 ## File Structure
@@ -555,7 +555,10 @@ run patch engine
 install dependencies
 rebuild native modules
 write launcher and build-info
+load every required native module through Electron-as-Node from staging
+run bounded GUI smoke from staging with remote control disabled
 atomically replace output
+retain the timestamped previous output for rollback
 write/register desktop entry
 print completion
 ```
@@ -570,7 +573,7 @@ Build in:
 STAGING_DIR="${OUTPUT_DIR}.staging.$$"
 ```
 
-On success, move an existing generated output to `${OUTPUT_DIR}.previous.$$`, move staging into place, then remove only that explicit previous generated path. On failure, the cleanup trap removes only the explicit staging and work directories.
+Before moving the existing output, validate the five required native modules through Electron-as-Node and run the bounded GUI smoke from staging. On success, move an existing generated output to a timestamped `${OUTPUT_DIR}.previous.*`, move staging into place, and retain that previous output for rollback. If promotion fails, restore it before returning failure. Generate/register desktop integration only after promotion.
 
 - [ ] **Step 5: Implement build metadata and registration**
 
@@ -740,14 +743,14 @@ test -x chatgpt-linux/chatgpt-linux.sh
 test -f chatgpt-linux/chatgpt-linux-feature-manifest.json
 ```
 
-- [ ] **Step 5: Validate native modules**
+- [ ] **Step 5: Confirm the installer's pre-promotion native gate**
 
-Use Electron's Node ABI to require each installed native module needed at startup:
+The installer must already have used Electron's Node ABI to require each installed native module needed at startup before promotion. Recheck the promoted copy:
 
 ```bash
 cd chatgpt-linux
 ./node_modules/.bin/electron -e '
-for (const name of ["better-sqlite3", "node-pty"]) {
+for (const name of ["@parcel/watcher", "bufferutil", "utf-8-validate", "better-sqlite3", "node-pty"]) {
   require(name);
   console.log(`loaded ${name}`);
 }
@@ -758,7 +761,7 @@ Expected: both modules load without ABI or shared-library errors.
 
 - [ ] **Step 6: Smoke-test the launcher**
 
-Disable background remote control during the smoke test:
+The installer runs this bounded smoke from staging with remote control disabled before promotion. Recheck the promoted launcher:
 
 ```bash
 CODEX_LINUX_REMOTE_CONTROL=0 \

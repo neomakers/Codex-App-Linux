@@ -17,7 +17,7 @@
   <img src="demo/codex-mobile-pairing.png" alt="Codex Mobile pairing screen running in the Linux port with the QR code scrambled for safety" width="820" />
 </p>
 
-OpenAI does not currently ship the ChatGPT desktop app for Linux. This project rebuilds the current official macOS ChatGPT DMG as an unofficial Linux Electron bundle and applies selected Linux runtime patches.
+OpenAI does not currently ship the ChatGPT desktop app for Linux. This project rebuilds the exact official macOS ChatGPT DMG selected by `compatibility/current.json` as an unofficial Linux Electron bundle and applies selected Linux runtime patches.
 
 Only the current DMG layout containing `ChatGPT.app` is supported. Older DMGs containing `Codex.app` are intentionally rejected instead of being handled by a compatibility path.
 
@@ -33,7 +33,7 @@ The latest Codex mobile workflow also depends on desktop-side authentication and
 
 ## What this gives Linux users
 
-- A runnable ChatGPT desktop app on Linux built from the current official ChatGPT DMG.
+- A runnable ChatGPT desktop app on Linux built from the repository's current verified official ChatGPT DMG.
 - A one-script install flow: run `install-chatgpt-linux.sh`, then launch `chatgpt-linux/chatgpt-linux.sh`.
 - Experimental Codex Mobile pairing surfaces through **Settings → Connections → Control other devices**; end-to-end enrollment remains release-dependent.
 - A Linux Browser Use `node_repl` bridge. The current upstream Browser Use data flow has changed, so treat it as partial until an active turn succeeds end to end.
@@ -45,11 +45,11 @@ The latest Codex mobile workflow also depends on desktop-side authentication and
 ## Features
 
 - **Current ChatGPT package rebuild**: converts the official macOS DMG containing `ChatGPT.app` into a runnable Linux Electron app.
-- **Codex Mobile pairing, experimental**: exposes the upstream approval flow and attempts to start the expected remote-control bridge. Availability and server-side enrollment must still be verified for each release.
+- **Codex Mobile pairing, partial**: exposes the upstream approval flow, but remote control is opt-in and a protected Linux device-key provider is not available. Availability and server-side enrollment remain unverified.
 - **In-app Browser Use, partial**: generates the Linux `node_repl` bridge. In ChatGPT 26.727 the upstream availability and routing code was refactored, so legacy renderer/route replacements are skipped and end-to-end control remains unverified.
 - **App Snapshot, skipped in 26.727**: the renderer chunks used by the experimental screenshot patch are absent from the current app. The installer records this as `skipped` instead of failing or claiming support.
 - **Chrome Control, in progress**: ports the upstream Chrome plugin contract for Google Chrome by installing the Codex Chrome Extension native messaging manifest and generating a Linux host bridge. Treat it as groundwork until Chrome runtime testing is complete.
-- **One-script installer**: resumes or reuses a DMG download, extracts the app, installs dependencies, rebuilds native modules, and creates a launcher.
+- **One-script installer**: accepts only the DMG identity and application metadata pinned by the current release contract, then validates staging before promotion.
 - **Desktop integration**: adds a **ChatGPT Linux** app-menu entry and registers the upstream `codex://` callback handler.
 - **Current-layout validation**: accepts `ChatGPT.app` and fails clearly when an older or incomplete package layout is supplied.
 
@@ -95,20 +95,27 @@ CODEX_LINUX_GRAPHICS_MODE=native ./chatgpt-linux.sh
 ./install-chatgpt-linux.sh --dmg /path/to/ChatGPT.dmg
 ./install-chatgpt-linux.sh --output /path/to/chatgpt-linux
 ./install-chatgpt-linux.sh --skip-cli-install
+./install-chatgpt-linux.sh --skip-gui-smoke  # expert/headless use; recorded as skipped
+./install-chatgpt-linux.sh --audit-candidate --dmg /path/to/future.dmg \
+  --audit-source-url https://example.invalid/future.dmg \
+  --audit-output /tmp/chatgpt-audit
 ```
 
 ## What the installer does
 
-The installer validates the source package and builds into a staging directory before replacing an existing generated output.
+Normal installation is bound to `compatibility/current.json`. The mutable download URL is not treated as “latest”; an exact cached contract DMG remains valid even if that URL changes.
 
-1. Reuses `ChatGPT-latest.dmg` when present, or performs a resumable download and verifies the expected size plus `7z t` integrity.
-2. Discovers and validates the current `ChatGPT.app` payload, including its complete `app.asar.unpacked` tree.
+1. Loads the selected immutable release contract and requires the exact DMG byte size and SHA-256 before extraction. A changed remote `Content-Length` is rejected before download.
+2. Requires the contract's `ChatGPT.app` profile, bundle ID, version/build, architecture, Electron version, main entry, and every required path.
 3. Uses system Node.js 22.12 or newer; otherwise caches portable Node.js 22.23.2 under `${XDG_CACHE_HOME:-$HOME/.cache}/chatgpt-linux/toolchain` without changing the system installation.
 4. Installs dependencies without running Node-ABI install scripts, downloads the exact Electron runtime, then rebuilds native modules once for that Electron ABI. Network-sensitive stages retry up to three times.
 5. Runs `tools/patch-chatgpt-linux.mjs` for selected Linux feature surfaces. Every patch is version-sensitive and recorded.
-6. Builds `chatgpt-linux/` in a staging directory and only replaces the previous generated output after success.
-7. Generates `chatgpt-linux/chatgpt-linux.sh`, `build-info.json`, and the **ChatGPT Linux** desktop entry.
-8. Registers the upstream `codex://` scheme so authentication callbacks still reach the application.
+6. Loads `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node from staging, then runs a bounded GUI smoke with remote control disabled.
+7. Promotes only validated staging, restores the old output on promotion failure, and retains one timestamped previous output for rollback.
+8. Generates the launcher and `build-info.json`, then creates desktop integration only after promotion.
+9. Registers the upstream `codex://` scheme so authentication callbacks still reach the application.
+
+`--audit-candidate` is a non-installing path for a future DMG. It writes portable candidate identity and application evidence, then exits before dependency installation, patching, desktop registration, or output promotion.
 
 The patch engine writes `chatgpt-linux/chatgpt-linux-feature-manifest.json` so each install records which Linux patches were applied or skipped.
 
@@ -124,7 +131,7 @@ These identifiers are intentionally preserved because changing them would break 
 
 ## Codex Mobile pairing
 
-The current `ChatGPT.app` contains upstream Codex phone-pairing surfaces. The patch engine attempts to expose those controls on Linux, preserve `codex://` callbacks, enable the `remote_control` feature flag, and start the bridge from the launcher. UI visibility alone does not prove that account enrollment or server-side pairing will succeed.
+The current `ChatGPT.app` contains upstream Codex phone-pairing surfaces. The patch engine exposes those controls and preserves `codex://` callbacks, but it does not patch an exportable software key as protected hardware. The launcher neither edits `~/.codex/config.toml` nor starts the daemon unless `CODEX_LINUX_REMOTE_CONTROL=1` is explicitly set. Mobile pairing remains partial.
 
 After installing:
 
@@ -137,7 +144,13 @@ After installing:
 
 If you only see fields such as **Display Name**, **Hostname**, and **SSH port**, that is the SSH remote-host setup form, not the phone pairing flow. Re-run the latest installer so the mobile pairing UI patch is applied.
 
-Mobile pairing requires the Linux desktop app process to stay running. If the mobile app stays on **Waiting for desktop**, keep the desktop app open and inspect:
+To experiment with the partial bridge, keep the desktop app running and opt in explicitly:
+
+```bash
+CODEX_LINUX_REMOTE_CONTROL=1 ./chatgpt-linux.sh
+```
+
+If the mobile app stays on **Waiting for desktop**, inspect:
 
 ```bash
 tail -n 100 "${XDG_CONFIG_HOME:-$HOME/.config}/chatgpt-linux/remote-control-daemon.log"
@@ -180,15 +193,15 @@ This is preferable to applying a broad match to unrelated minified files. Restor
 
 This release does not ship reliable Linux tray/background presence. Keep the ChatGPT Linux process running for phone/mobile presence. If you launch with `./chatgpt-linux.sh` from a terminal and close or quit the app, mobile will see the desktop as offline.
 
-Disable the remote-control bridge for debugging:
+Remote control is off by default. Enable the partial bridge only for an explicit test:
 
 ```bash
-CODEX_LINUX_REMOTE_CONTROL=0 ./chatgpt-linux.sh
+CODEX_LINUX_REMOTE_CONTROL=1 ./chatgpt-linux.sh
 ```
 
 ## Known limitations
 
-- Only current DMGs containing `ChatGPT.app` are supported; older `Codex.app` layouts are deliberately rejected.
+- Normal installation accepts only the exact release selected by `compatibility/current.json`; use `--audit-candidate` to inspect a future DMG without installing it. Older `Codex.app` layouts are deliberately rejected.
 - Feature patches match minified upstream code and may be skipped when a new ChatGPT release changes those snippets. Review the generated feature manifest.
 - Mobile pairing requires the Linux desktop app process to keep running.
 - Browser Use is partial/unverified in the current release and depends on active in-app browser session metadata.
@@ -208,6 +221,7 @@ This includes:
 - Electron runtime version
 - selected main entrypoint
 - DMG path + SHA256
+- release contract, DMG byte size, selected Node/npm paths, and staging validation result
 - Codex CLI path + version
 
 Attach this file in issues. It makes compatibility debugging much faster.
@@ -243,7 +257,8 @@ sudo zypper install 7zip
 |---|---|
 | `Cannot find module ...` on startup | Re-run installer so dependencies are regenerated for that DMG build |
 | `codex-app-server-version-unsupported` | Update CLI: `npm i -g @openai/codex@latest`; launcher should use `which codex` |
-| CLI not found | Install CLI globally or let launcher use built-in `npx` fallback |
+| CLI not found | Install CLI globally or let the launcher use its recorded Node/npm fallback |
+| Recorded Node runtime is unavailable | Re-run the installer to restore the persistent cached toolchain; the launcher will not silently fall back to an incompatible runtime |
 | `7zip not found` | Install your distribution's `7zip` package, then rerun the installer |
 | Blank/failed window | Ensure `.vite` and `webview` exist under install output directory |
 | Flickering, white panels, or janky settings UI | Use the default launcher. It applies stable Linux graphics flags. To opt out, run `CODEX_LINUX_GRAPHICS_MODE=native ./chatgpt-linux.sh` |

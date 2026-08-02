@@ -9,6 +9,7 @@ This is the canonical procedure for taking a newer official macOS DMG into the L
 - A future `Codex.app` fallback needs a separate profile, adapter, output name, cache identity, and test surface. It must not share the ChatGPT.app patch engine.
 - Do not commit DMGs, extracted payloads, generated applications, credentials, or machine-local paths.
 - Do not update the current pointer until a candidate has completed the audit, build, and smoke gates. Record unsupported candidates without replacing the last verified contract.
+- Normal installation is fail-closed against the selected contract. Use `--audit-candidate` for unknown DMGs; do not weaken normal mode to investigate a mutable endpoint.
 
 ## 1. Fetch and record a baseline
 
@@ -53,6 +54,14 @@ Capture redirect/final-URL metadata when the HTTP client does not include it in 
 
 ## 3. Extract and audit before editing
 
+Use the non-installing audit mode to capture the candidate's version, build, bundle ID, architecture, Electron version, main entry, DMG size/SHA-256, and source identity. It exits before dependency installation, patching, desktop registration, or output promotion.
+
+```bash
+./install-chatgpt-linux.sh --audit-candidate --dmg "$candidate" \
+  --audit-source-url "$url" \
+  --audit-output "$work_dir/audit"
+```
+
 Extract into the work directory and compare the candidate with the selected contract. Confirm `ChatGPT.app`, required paths, version/build, bundle ID, Electron version, main entry, native dependencies, bundled plugins, and hashed renderer/main assets. Keep the `Info.plist`, ASAR listing, inventories, and plugin/native-module observations with the candidate evidence.
 
 ```bash
@@ -76,7 +85,7 @@ Preserve internal Codex contracts behind the ChatGPT Linux name. A visible setti
 
 ## 5. Rebuild for the candidate Electron ABI
 
-Use a fresh output for candidate validation. Dependencies must be synthesized for the candidate, native install scripts must not run prematurely, and `@electron/rebuild` must run after the exact candidate Electron runtime is selected. Do not use the system Node ABI or a previous `node_modules` directory.
+After audit evidence supports the candidate and a prospective immutable release contract exists on the upgrade branch, select that contract in the branch for validation. Use a fresh output. Dependencies must be synthesized for the candidate, native install scripts must not run prematurely, and `@electron/rebuild` must run after the exact candidate Electron runtime is selected. Do not use the system Node ABI or a previous `node_modules` directory.
 
 ```bash
 output_dir="$work_dir/chatgpt-linux-<version>-<build>"
@@ -87,7 +96,7 @@ Confirm generated build information records the candidate hash, version/build, E
 
 ## 6. Stage, smoke test, and atomically promote
 
-The installer must build in staging and retain the previous working output until validation succeeds. Test the new output first. Record a bounded GUI smoke result that covers:
+The installer must build completely in staging and retain the previous working output until validation succeeds. Before any output move, load `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node, then run the bounded GUI smoke from staging with `CODEX_LINUX_REMOTE_CONTROL=0`. Success requires the intentional timeout plus a mounted application route in the log. Record a result that covers:
 
 1. Application launch without an Electron ABI or native-module error.
 2. Desktop entry and preserved `codex://` callback handling.
@@ -95,7 +104,9 @@ The installer must build in staging and retain the previous working output until
 4. Each required changed surface and failure mode; each optional surface as evidence or `skipped`.
 5. One restart without reinstalling.
 
-Only after this smoke test may a known-good output be atomically replaced. On failure, retain the prior output and mark the candidate incomplete or unsupported.
+Only after both native and GUI validation may a known-good output be atomically replaced. On promotion failure, restore the old output. After success, keep the timestamped previous output for rollback and generate/register desktop integration. `--skip-gui-smoke` is only for expert headless use and its skip must remain prominent in logs and `build-info.json`.
+
+Remote control is off by default. Only an explicit `CODEX_LINUX_REMOTE_CONTROL=1` launch may update Codex configuration or start the daemon. Do not patch a plaintext/exportable Linux device key or label software storage as protected/nonextractable; record that provider as unsupported/skipped and keep mobile pairing `partial`.
 
 ## 7. Update the contract and publish through review
 
