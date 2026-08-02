@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const enginePath = new URL("../tools/patch-chatgpt-linux.mjs", import.meta.url);
@@ -45,7 +47,57 @@ test("treats the versioned Browser Use availability chunk as optional", () => {
   );
   assert.match(source, /if \(browserUseAvailability\) \{/);
   assert.match(source, /Browser Use renderer availability chunk was not present/);
-  assert.match(source, /status: browserUseAvailability \? "patched-experimental" : "partial"/);
+});
+
+test("generates only release-contract feature statuses from a patched fixture", (t) => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chatgpt-linux-patch-engine-"));
+  const assetsDir = path.join(fixtureRoot, "webview", "assets");
+  const buildDir = path.join(fixtureRoot, ".vite", "build");
+  const pluginRoot = path.join(fixtureRoot, "chrome-plugin-source");
+  const scriptsDir = path.join(pluginRoot, "scripts");
+
+  t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+  fs.mkdirSync(assetsDir, { recursive: true });
+  fs.mkdirSync(buildDir, { recursive: true });
+  fs.mkdirSync(path.join(pluginRoot, ".codex-plugin"), { recursive: true });
+  fs.mkdirSync(scriptsDir, { recursive: true });
+
+  for (const asset of [
+    "app-main-fixture.js",
+    "remote-connections-settings-fixture.js",
+    "remote-connection-visibility-fixture.js",
+    "remote-control-connections-visibility-fixture.js",
+    "codex-mobile-setup-flow-fixture.js",
+    "use-in-app-browser-use-availability-fixture.js",
+    "annotation-comment-editor-card-fixture.js",
+    "composer-fixture.js",
+  ]) {
+    fs.writeFileSync(path.join(assetsDir, asset), "");
+  }
+  fs.writeFileSync(path.join(buildDir, "main-fixture.js"), "");
+  fs.writeFileSync(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "{}");
+  for (const script of [
+    "check-native-host-manifest.js",
+    "chrome-is-running.js",
+    "open-chrome-window.js",
+  ]) {
+    fs.writeFileSync(path.join(scriptsDir, script), "");
+  }
+
+  const result = spawnSync(process.execPath, [enginePath.pathname, fixtureRoot], {
+    encoding: "utf8",
+    env: { ...process.env, CODEX_CHROME_PLUGIN_SOURCE: pluginRoot },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(fixtureRoot, "chatgpt-linux-feature-manifest.json"), "utf8"),
+  );
+  assert.equal(manifest.features.mobilePairingUi.status, "partial");
+  assert.equal(manifest.features.chromeControl.status, "partial");
+  for (const value of Object.values(manifest.features)) {
+    assert.ok(["verified", "partial", "skipped", "not-shipped", "unsupported"].includes(value.status));
+  }
 });
 
 test("skips the experimental app snapshot when its renderer chunks are absent", () => {

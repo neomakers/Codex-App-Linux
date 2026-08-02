@@ -15,7 +15,7 @@ const patches = [];
 const warnings = [];
 const features = {
   mobilePairingUi: {
-    status: "patched-experimental",
+    status: "partial",
     evidence: "Renderer feature gates for Codex Mobile pairing UI are patched.",
   },
 };
@@ -196,7 +196,7 @@ function patchMobilePairingUi() {
     );
   }
 
-  feature("mobilePairingUi", "patched-experimental", {
+  feature("mobilePairingUi", "partial", {
     evidence: "Renderer feature gates, remote settings visibility gates, and Linux-neutral copy are patched.",
     warning: "UI visibility alone is not proof of mobile pairing.",
   });
@@ -208,7 +208,7 @@ function patchLinuxRemoteControlBridge() {
 
   const linuxDeviceKeyProvider = String.raw`function wV({resourcesPath:e}){if(process.platform===` + "`linux`" + String.raw`){let e=require(` + "`crypto`" + String.raw`),t=require(` + "`fs`" + String.raw`),n=require(` + "`path`" + String.raw`),r=require(` + "`os`" + String.raw`),i=n.join(process.env.CODEX_LINUX_REMOTE_CONTROL_KEY_DIR||n.join(r.homedir(),` + "`.config`" + String.raw`,` + "`chatgpt-linux`" + String.raw`),` + "`remote-control-device-keys.json`" + String.raw`),a=()=>{try{return JSON.parse(t.readFileSync(i,` + "`utf8`" + String.raw`))}catch{return{keys:{}}}},o=e=>{t.mkdirSync(n.dirname(i),{recursive:!0}),t.writeFileSync(i,JSON.stringify(e,null,2)+` + "`\\n`" + String.raw`,{mode:384})},s=t=>e.createHash(` + "`sha256`" + String.raw`).update(t).digest(` + "`base64url`" + String.raw`),c=t=>Buffer.from(JSON.stringify({domain:SV,payload:EV(t)}),` + "`utf8`" + String.raw`),l=t=>{let n=a(),r=n.keys[t];if(!r)throw Error(` + "`Linux remote-control device key not found: ${t}`" + String.raw`);return r};return{createDeviceKey:async t=>{let r=e.generateKeyPairSync(` + "`ec`" + String.raw`,{namedCurve:` + "`prime256v1`" + String.raw`}),u=r.publicKey.export({type:` + "`spki`" + String.raw`,format:` + "`der`" + String.raw`}).toString(` + "`base64`" + String.raw`),d=` + "`linux-${Date.now().toString(36)}-${s(u).slice(0,16)}`" + String.raw`,f={algorithm:` + "`ecdsa_p256_sha256`" + String.raw`,keyId:d,protectionClass:` + "`os_protected_nonextractable`" + String.raw`,publicKeySpkiDerBase64:u,privateKeyPem:r.privateKey.export({type:` + "`pkcs8`" + String.raw`,format:` + "`pem`" + String.raw`})},p=a();return p.keys[d]=f,o(p),{algorithm:f.algorithm,keyId:f.keyId,protectionClass:f.protectionClass,publicKeySpkiDerBase64:f.publicKeySpkiDerBase64}},deleteDeviceKey:async e=>{let t=a();delete t.keys[e],o(t)},getDeviceKeyPublic:async e=>{let t=l(e);return{algorithm:t.algorithm,keyId:t.keyId,protectionClass:t.protectionClass,publicKeySpkiDerBase64:t.publicKeySpkiDerBase64}},signDeviceKey:async(t,n)=>{let r=l(t),i=c(n),a=e.createSign(` + "`SHA256`" + String.raw`);a.update(i),a.end();let o=a.sign(r.privateKeyPem);return{algorithm:r.algorithm,signatureDerBase64:o.toString(` + "`base64`" + String.raw`),signedPayloadBase64:i.toString(` + "`base64`" + String.raw`)}}}}let t=null,n=()=>{if(process.platform!==` + "`darwin`" + String.raw`)throw Error(` + "`Remote control device keys are only available on macOS`" + String.raw`);if(e==null)throw Error(` + "`Remote control device keys require resourcesPath`" + String.raw`);return t??=bV((0,i.join)(e,` + "`native`" + String.raw`,xV)),t};return{createDeviceKey:e=>n().createDeviceKey(e??` + "`hardware_only`" + String.raw`),deleteDeviceKey:e=>n().deleteDeviceKey(e),getDeviceKeyPublic:e=>n().getDeviceKeyPublic(e),signDeviceKey:async(e,t)=>{let r=TV(t);return{...await n().signDeviceKey(e,r),signedPayloadBase64:r.toString(` + "`base64`" + String.raw`)}}}}`;
 
-  const deviceKeyPatched = replaceRegexOptional(
+  replaceRegexOptional(
     mainProcess,
     /function wV\(\{resourcesPath:e\}\)\{let t=null,n=\(\)=>\{if\(process\.platform!==`darwin`\)throw Error\(`Remote control device keys are only available on macOS`\);if\(e==null\)throw Error\(`Remote control device keys require resourcesPath`\);return t\?\?=bV\(\(0,i\.join\)\(e,`native`,xV\)\),t\};return\{createDeviceKey:e=>n\(\)\.createDeviceKey\(e\?\?`hardware_only`\),deleteDeviceKey:e=>n\(\)\.deleteDeviceKey\(e\),getDeviceKeyPublic:e=>n\(\)\.getDeviceKeyPublic\(e\),signDeviceKey:async\(e,t\)=>\{let r=TV\(t\);return\{\.\.\.await n\(\)\.signDeviceKey\(e,r\),signedPayloadBase64:r\.toString\(`base64`\)\}\}\}\}/,
     linuxDeviceKeyProvider,
@@ -236,7 +236,7 @@ function patchLinuxRemoteControlBridge() {
     "Enable Linux remote_control host config before local app-server startup",
   );
 
-  feature("mobilePairingBridge", deviceKeyPatched ? "patched-experimental" : "partial", {
+  feature("mobilePairingBridge", "partial", {
     evidence: "Linux remote_control config persistence is patched; Linux device-key provider patch attempted.",
     caveat: "End-to-end server acceptance and account behavior still require the final runtime batch test.",
   });
@@ -366,7 +366,7 @@ function patchBrowserUse() {
   writeBrowserUseShim();
 
   features.browserUse = {
-    status: browserUseAvailability ? "patched-experimental" : "partial",
+    status: "partial",
     evidence: browserUseAvailability ? "Feature gates are enabled and a Linux node_repl Browser Use MCP shim is generated." : "The legacy renderer availability chunk is absent; main-process patches and the Linux node_repl shim were attempted.",
     acceptance: "Must be tested in a fresh installed app by opening the in-app browser and asking Codex to browse the active tab.",
   };
@@ -396,7 +396,7 @@ function patchChromeControl() {
 
   patchChromeHelperScripts(pluginRoot);
 
-  feature("chromeControl", "patched-experimental", {
+  feature("chromeControl", "partial", {
     evidence: "Chrome plugin resources are copied, Linux native messaging host is generated, and Linux helper scripts are patched for Google Chrome.",
     caveat: "Requires Google Chrome plus Codex Chrome Extension runtime validation. Chromium-family browsers are intentionally out of scope.",
   });
@@ -699,7 +699,7 @@ function patchExperimentalAppSnapshot() {
     "Experimental Linux app snapshot preview",
   );
 
-  feature("appSnapshotScreenshot", "patched-experimental", {
+  feature("appSnapshotScreenshot", "partial", {
     evidence: "Adds a Linux screenshot-based app snapshot menu item and composer preview.",
     caveat: "This is not full macOS Computer Use/Appshot parity. It attaches a screenshot-style native app context only.",
   });

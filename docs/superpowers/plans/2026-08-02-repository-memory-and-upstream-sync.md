@@ -109,24 +109,33 @@ Expected: documentation is internally consistent, link targets exist, and all te
 - Consumes: patch results already collected by the patch engine.
 - Produces: generated feature statuses no stronger than the current release contract.
 
-- [ ] **Step 1: Add failing metadata assertions**
+- [ ] **Step 1: Add a failing generated-manifest behavior test**
 
 ```js
-assert.doesNotMatch(source, /mobilePairingUi:\s*\{\s*status:\s*"patched-experimental"/s);
-assert.doesNotMatch(source, /chromeControl:\s*\{\s*status:\s*"patched-experimental"/s);
-assert.match(source, /mobilePairingUi:\s*\{\s*status:\s*"partial"/s);
-assert.match(source, /chromeControl:\s*\{\s*status:\s*"partial"/s);
+const result = spawnSync(process.execPath, [enginePath.pathname, fixtureRoot], {
+  encoding: "utf8",
+  env: { ...process.env, CODEX_CHROME_PLUGIN_SOURCE: pluginRoot },
+});
+assert.equal(result.status, 0, result.stderr);
+const manifest = JSON.parse(fs.readFileSync(path.join(fixtureRoot, "chatgpt-linux-feature-manifest.json"), "utf8"));
+assert.equal(manifest.features.mobilePairingUi.status, "partial");
+assert.equal(manifest.features.chromeControl.status, "partial");
+for (const value of Object.values(manifest.features)) {
+  assert.ok(["verified", "partial", "skipped", "not-shipped", "unsupported"].includes(value.status));
+}
 ```
+
+The fixture contains empty but correctly named required renderer/build assets plus a minimal Chrome plugin directory. This exercises the real patch CLI and its generated manifest; it must not inspect source text to infer feature status.
 
 - [ ] **Step 2: Run the focused test to verify it fails**
 
 Run: `node --test tests/patch-engine-metadata.test.mjs`
 
-Expected: FAIL because both features currently overstate patch completion.
+Expected: FAIL because generated feature summaries currently use `patched-experimental`.
 
-- [ ] **Step 3: Lower claims to `partial` and state the caveats**
+- [ ] **Step 3: Lower unverified claims to `partial` and state the caveats**
 
-Change only the two generated feature summaries. Preserve individual patch records and all internal Codex identifiers.
+Replace every `patched-experimental` feature summary with `partial`. A patch or shim can prove build integration, but only an end-to-end check may promote a feature to `verified`. Preserve individual patch records and all internal Codex identifiers.
 
 - [ ] **Step 4: Run focused and full tests**
 
