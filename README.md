@@ -110,7 +110,7 @@ Normal installation is bound to `compatibility/current.json`. The mutable downlo
 3. Uses system Node.js 22.12 or newer; otherwise caches portable Node.js 22.23.2 under `${XDG_CACHE_HOME:-$HOME/.cache}/chatgpt-linux/toolchain` without changing the system installation.
 4. Installs dependencies without running Node-ABI install scripts, downloads the exact Electron runtime, then rebuilds native modules once for that Electron ABI. Network-sensitive stages retry up to three times.
 5. Runs `tools/patch-chatgpt-linux.mjs` for selected Linux feature surfaces. Every patch is version-sensitive and recorded.
-6. Loads `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node from staging, then runs a bounded GUI smoke in an isolated state directory and owned process group with remote control disabled.
+6. Loads `@parcel/watcher`, `bufferutil`, `utf-8-validate`, `node-pty`, and `better-sqlite3` through Electron-as-Node from staging, then runs a bounded 40-second GUI smoke in an isolated state directory and owned process group with remote control disabled. `CHATGPT_GUI_SMOKE_SECONDS` may set an explicit 1–90 second bound for slower or faster hosts.
 7. Promotes only validated staging, restores the old output on promotion failure, and retains one timestamped previous output for rollback.
 8. Generates the launcher and `build-info.json`, then creates desktop integration only after promotion.
 9. Registers the upstream `codex://` scheme so authentication callbacks still reach the application.

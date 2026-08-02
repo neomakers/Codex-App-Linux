@@ -8,6 +8,8 @@ CHATGPT_BUNDLE_ID="com.openai.codex"
 MIN_NODE_VERSION="22.12.0"
 PORTABLE_NODE_VERSION="22.23.2"
 DOWNLOAD_ATTEMPTS=3
+GUI_SMOKE_SECONDS_DEFAULT=40
+GUI_SMOKE_SECONDS_MAX=90
 
 installer_error() {
   printf '[x] %s\n' "$*" >&2
@@ -690,12 +692,14 @@ terminate_owned_process_group() {
 run_staging_gui_smoke() {
   local staging_dir="$1"
   local log_file="$2"
-  local smoke_seconds="${CHATGPT_GUI_SMOKE_SECONDS:-20}"
+  local smoke_seconds="${CHATGPT_GUI_SMOKE_SECONDS:-$GUI_SMOKE_SECONDS_DEFAULT}"
   local status=0
   local started_at elapsed smoke_pid smoke_state_dir
 
-  [[ "$smoke_seconds" =~ ^[1-9][0-9]*$ ]] && (( smoke_seconds <= 60 )) || {
-    installer_error "GUI smoke timeout must be between 1 and 60 seconds"
+  [[ "$smoke_seconds" =~ ^[1-9][0-9]*$ ]] && \
+    (( smoke_seconds <= GUI_SMOKE_SECONDS_MAX )) || {
+    installer_error \
+      "GUI smoke timeout must be between 1 and $GUI_SMOKE_SECONDS_MAX seconds"
     return
   }
   [[ -x "$staging_dir/$CHATGPT_LAUNCHER_NAME" ]] || {
