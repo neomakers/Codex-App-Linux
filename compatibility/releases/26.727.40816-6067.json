@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "application": {
+    "profile": "chatgpt-app-only",
+    "bundleId": "com.openai.chat",
+    "version": "26.727.40816",
+    "build": "6067",
+    "architecture": "x64",
+    "electronVersion": "42.3.0",
+    "mainEntry": ".vite/build/early-bootstrap.js"
+  },
+  "dmg": {
+    "sourceUrl": "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg",
+    "observedAt": "2026-08-01T00:00:00Z",
+    "observedBytes": 609303023,
+    "sha256": "fb93a239c811c7639cf45a90ff36c262fa0290640140cd12da3fdc60b62255ae"
+  },
+  "toolchain": {
+    "installer": {
+      "version": "2026.08.01-chatgpt-app"
+    },
+    "node": {
+      "version": "22.23.2"
+    },
+    "asar": {
+      "version": "4.2.1"
+    },
+    "electronRebuild": {
+      "version": "4.0.3"
+    },
+    "sevenZip": {
+      "version": "23.01"
+    }
+  },
+  "repository": {
+    "upstream": {
+      "repository": "areu01or00/Codex-App-Linux",
+      "commit": "27371c24b143b1901a5c8c4059dd396ab34bc262"
+    },
+    "fork": {
+      "repository": "neomakers/Codex-App-Linux",
+      "commit": "dc7e365c5de6649ed11df467e5ebc9d78a473543"
+    }
+  },
+  "requiredPaths": [
+    "ChatGPT.app/Contents/Info.plist",
+    "ChatGPT.app/Contents/Resources/app.asar",
+    "ChatGPT.app/Contents/Resources/app.asar.unpacked",
+    "ChatGPT.app/Contents/Resources/plugins"
+  ],
+  "observations": [
+    "The release contains the ChatGPT.app payload profile only.",
+    "The Browser Use renderer availability chunk is absent; the Linux node_repl shim and main-process gates are the available evidence.",
+    "The annotation-editor and composer renderer chunks required by the experimental App Snapshot patch are absent."
+  ],
+  "features": {
+    "coreRebuild": {
+      "status": "verified",
+      "verification": "build-only",
+      "evidence": "The application package, Electron metadata, and native-module rebuild inputs were inspected for this release."
+    },
+    "mobilePairing": {
+      "status": "partial",
+      "verification": "gui-smoke",
+      "evidence": "The upstream pairing surface is exposed, but account enrollment remains release-dependent."
+    },
+    "browserUse": {
+      "status": "partial",
+      "verification": "availability-smoke",
+      "evidence": "Availability can resolve on Linux, but an active Browser Use session has not completed an action end to end."
+    },
+    "appSnapshot": {
+      "status": "skipped",
+      "verification": "not-tested",
+      "evidence": "Required experimental renderer chunks are absent, so the patch is intentionally not applied."
+    },
+    "chromeControl": {
+      "status": "partial",
+      "verification": "build-only",
+      "evidence": "The Google Chrome native-host groundwork is present, but Chrome runtime control has not been verified."
+    },
+    "backgroundPresence": {
+      "status": "not-shipped",
+      "verification": "not-tested",
+      "evidence": "Reliable Linux tray and background presence are not part of this release."
+    }
+  }
+}
