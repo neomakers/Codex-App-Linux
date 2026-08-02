@@ -204,13 +204,13 @@ Create `agent/chatgpt-app-rebuild-2026-08-02` from `origin/main`, remove the old
 
 Run `bash tests/run-all.sh`, inspect `git diff --check`, commit the migration, and push the feature branch without force.
 
-- [ ] **Step 5: Open and merge a pull request**
+- [ ] **Step 5: Open a pull request and complete final review**
 
-Open a PR to `main` describing the ChatGPT.app-only migration, durable repository memory, release evidence, and verification. Merge only after tests pass. Preserve branch history through a regular merge or squash supported by the repository.
+Open a draft PR to `main` describing the ChatGPT.app-only migration, durable repository memory, release evidence, and verification. Complete the whole-branch review and required checks before merging. Preserve branch history through a regular merge or squash supported by the repository.
 
-- [ ] **Step 6: Rename the writable repository when available**
+- [ ] **Step 6: Confirm the canonical repository identity**
 
-Rename `neomakers/Codex-App-Linux` to `neomakers/ChatGPT-App-Linux` only after the merge. Verify the new URL and GitHub redirect before changing local links.
+Keep `neomakers/Codex-App-Linux` as the canonical writable fork for this migration. Verify README clone/raw links resolve to it and document that the repository slug preserves upstream lineage while the product and accepted payload are ChatGPT Linux and ChatGPT.app-only.
 
 - [ ] **Step 7: Attach the current workspace non-destructively**
 
